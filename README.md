@@ -4,26 +4,25 @@ Capture any live webpage straight into your Claude Code conversation — the ful
 
 ## Quickstart
 
-Paste this one message into a new Claude Code conversation — replace the URL with the page you want:
+In a new Claude Code conversation, send these two messages, in order:
+
+**1.** `/design` — send it alone, on its own, and let it finish. This loads the canvas-editor bundle
+the second step wraps your capture with. It only has to happen once per conversation, and only a
+person can trigger it — an agent can't send this one for you, which is why it can't be folded into
+the message below. Whatever it produces doesn't matter; you can ignore it.
+
+**2.** Then paste this, with the URL you want:
 
 ```
 Clone https://github.com/Ofirushinek/canvas-capture.git, cd into it, and follow
 .claude/commands/capture.md to capture ADD_YOUR_URL_HERE
 ```
 
-That's it — one paste. Claude gets the tool, installs Playwright if it isn't already there, captures
-the page, verifies it against the real thing, and opens the result as an editable canvas, all in the
-same turn.
+Claude gets the tool, installs Playwright if it isn't already there, captures the page, verifies it
+against the real thing, and opens the result as an editable canvas.
 
-Already have the repo cloned in this conversation? `/capture <url>` alone does the same thing, faster,
-for every capture after the first.
-
-⚠️ **The "opens as an editable canvas" part needs `/design` to have run at least once in this same
-conversation first.** That's what loads the canvas-editor bundle this tool wraps your capture with —
-it isn't preloaded at session start, and an agent can't trigger it on its own (`/design` only runs from
-a person typing it). If `/capture` says the bundle isn't there yet, run `/design` once yourself (any
-throwaway prompt, its output doesn't matter) in the same conversation, then ask for `/capture` again.
-Not a Desktop-vs-web or cloud-vs-local thing — confirmed by testing both ways.
+Already have the repo cloned and `/design` already run in this conversation? `/capture <url>` alone
+does the same thing as step 2, faster, for every capture after the first.
 
 ## What this is
 

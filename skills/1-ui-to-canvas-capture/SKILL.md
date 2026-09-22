@@ -335,10 +335,7 @@ instead of every new site starting the investigation over from zero.
     not. This is unrelated to the 8000px height cap (finding 33's sibling note) — a tall-but-narrow
     capture can hit the height cap while staying well under this size ceiling, and a short-but-dense
     capture can hit this ceiling while staying well under the height cap; they're two independent limits.
-    The capture script now warns on stderr above 1.8MB (a safety margin) — take it seriously; a page
-    dense enough to trip it needs a narrower selector or splitting into multiple artboards by real DOM
-    boundaries, not truncating the HTML text (naive text truncation reliably breaks tag balance and any
-    trailing `<script data-dc-script>` block).
+    The capture script now handles this itself above 1.8MB (a safety margin) — see finding 37 for how.
 35. **Splitting one capture into several artboards by DOM boundaries can silently lose page-level
     background/text-color/font, if the split pieces are not the original body/html root.** Confirmed live:
     a dark-mode site's `background-color`/`color`/`font-family` were declared once, high up (effectively
@@ -354,6 +351,26 @@ instead of every new site starting the investigation over from zero.
     where a real image/illustration should be — the graphic itself was not captured. Not yet investigated
     whether this is an SVG-with-`<use>`-referencing-external-`<defs>` gap, a lazy-loaded/canvas-drawn
     illustration, or something else. Flagging so the next session that hits it doesn't start from zero.
+37. **Auto-cropping a page over the ~1.8MB budget (finding 34) took three tries to get right — the
+    obvious approaches are wrong.** Ofir's explicit product call: a working canvas covering the TOP of a
+    page beats a complete one that silently fails to publish, so past the budget the script should crop
+    height from the top down automatically. First attempt dropped whole TOP-LEVEL children of the
+    captured root until under budget — broke immediately on coinmarketcap.com, whose `body` decomposes
+    into only a handful of giant wrapper divs, so getting under budget meant dropping every single one:
+    a near-empty shell, not a cropped page. Second attempt recursed to find and delete individual
+    bottommost LEAF nodes instead, at any depth — also wrong, and only caught by actually rendering and
+    screenshotting the output (checking the byte count alone said it "worked"): almost every element here
+    carries its own explicit `height` baked into inline style (this tool bakes full computed style onto
+    everything), so deleting a deeply-nested leaf doesn't shrink its ancestor row at all — the row keeps
+    its fixed height regardless of what's left inside it. Real result: hundreds of blank gaps punched
+    through a table, same overall page height as before. The fix that actually works: crop by a real
+    Y-COORDINATE, not by picking nodes to delete. Every element is already tagged with its own
+    `_captureTop`/`_captureBottom` relative to the capture root (at every depth, not just top-level —
+    tagged inside `serialize()` itself via a `rootRectForGeo` closure var set once before the root's own
+    `serialize(root)` call). A binary search over that Y-cutoff (0..original height) finds the tallest
+    line whose "keep everything starting above it, recurse into anything straddling it" filter still fits
+    the byte budget. This is a real "keep the top N px" crop with no blank gaps and no gutted sections —
+    confirmed by rendering and screenshotting the actual cropped output, not just its byte count.
 
 ## This skill does not cover the return direction
 

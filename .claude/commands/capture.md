@@ -65,11 +65,17 @@ else warrants a "how do you want to proceed" menu.
      **The Design type also has an undocumented single-artboard BYTE-SIZE ceiling, somewhere between 2MB
      and 3MB** — confirmed by bisection on a real dense page (2MB artboard rendered, 3MB from the same
      page did not). Above it, the publish itself succeeds with no error and the canvas shows "No
-     artboards to show in this view." with nothing pointing at why. The capture script itself now warns
-     on stderr when `Main.dc.html` exceeds 1.8MB (a safety margin under the observed range) — take that
-     warning seriously before publishing rather than finding out after. If it fires, this needs a
-     narrower selector or splitting the page into multiple artboards by real DOM boundaries (not by
-     truncating the HTML text) — treat that as real, reportable work, not something to silently skip.
+     artboards to show in this view." with nothing pointing at why. The capture script now handles this
+     itself: if `Main.dc.html` would exceed ~1.8MB (a safety margin under the observed range), it
+     automatically crops the page height from the top down — binary-searching the tallest cutoff that
+     still fits, using each element's real captured Y-position at any depth (never by truncating the HTML
+     text, which breaks tag balance and the trailing `<script data-dc-script>` block, and never by
+     deleting whole top-level sections or random leaf nodes, both of which were tried and produced a
+     gutted or gap-riddled page — see the script's own comments on the two earlier broken versions of
+     this). The result is a real, working canvas covering the top of the page — a deliberate product
+     choice: a working partial capture beats a complete one that silently fails to publish. If it fires,
+     say so plainly in the report (what fraction of the page height survived) — never present a cropped
+     capture as a complete one.
    - Call the Artifact tool: `action: "publish"`, `url`: the canvas's own url from the second call,
      `root`: that scratch dir, `file_path`: the absolute path to `project/canvas.json` in it, `files`:
      every other file by its `project/…` path (e.g. `{"project/Main.dc.html": "project/Main.dc.html",

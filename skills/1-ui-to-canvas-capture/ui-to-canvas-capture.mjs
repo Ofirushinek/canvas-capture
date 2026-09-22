@@ -466,6 +466,18 @@ if (groupMeta) {
 const tree = await page.evaluate(({ rootSel, PROPS, textFlowTags, groupMeta }) => {
   const IMG_URL_RE = /url\((['"]?)(.*?)\1\)/;
   const TEXT_FLOW_TAGS_BROWSER = new Set(textFlowTags);
+  // Set right before `serialize(root)` is first called, below. Every 'el'
+  // node built anywhere in the recursive walk — root's direct children AND
+  // every descendant at every depth — reads this same closure variable to
+  // tag its own vertical span relative to root. That per-node geometry, at
+  // full depth, is what lets the Node-side size-budget trim (below) descend
+  // into a single giant wrapper div and drop real bottom-of-page leaf
+  // content granularly, instead of only ever being able to amputate whole
+  // top-level siblings — the coarser approach this replaced could only drop
+  // entire root-level sections, which on a page whose body is essentially
+  // one or two big wrapper divs meant dropping ALL of them just to clear a
+  // few hundred KB, gutting the whole page instead of trimming its bottom.
+  let rootRectForGeo = null;
 
   function computedOf(el) {
     const cs = getComputedStyle(el);
@@ -718,6 +730,11 @@ const tree = await page.evaluate(({ rootSel, PROPS, textFlowTags, groupMeta }) =
       style: computedOf(el),
       children: [],
     };
+    if (rootRectForGeo) {
+      const r = el.getBoundingClientRect();
+      node._captureTop = Math.round(r.top - rootRectForGeo.top);
+      node._captureBottom = Math.round(r.bottom - rootRectForGeo.top);
+    }
     if (el.tagName === 'IMG') {
       node.src = el.currentSrc || el.src;
       node.alt = el.getAttribute('alt') || '';
@@ -793,6 +810,9 @@ const tree = await page.evaluate(({ rootSel, PROPS, textFlowTags, groupMeta }) =
   }
 
   const root = document.querySelector(rootSel);
+  // Must be set before the FIRST serialize(root) call — every 'el' node,
+  // at every depth, tags its own geometry against this during that walk.
+  rootRectForGeo = root.getBoundingClientRect();
   const tree = serialize(root);
 
   // Floating companions (tooltips, popovers): position:fixed, so they're
@@ -806,7 +826,7 @@ const tree = await page.evaluate(({ rootSel, PROPS, textFlowTags, groupMeta }) =
   // meaningless without the exact scroll position they were measured at,
   // which a static capture can never reproduce.
   if (tree) {
-    const rootRect = root.getBoundingClientRect();
+    const rootRect = rootRectForGeo;
     const candidates = [...document.querySelectorAll('body *')].filter((elCand) => {
       if (root.contains(elCand)) return false;
       const s = getComputedStyle(elCand);
@@ -1174,9 +1194,70 @@ if (tree.type === 'el' && ['body', 'html', 'head'].includes(tree.tag)) {
   tree.tag = 'div';
 }
 pruneRedundantStyles(tree, null);
-const bodyHtml = render(tree);
 
-const dcHtml = `<!doctype html>
+// The Design Artifact type has an undocumented single-artboard size ceiling
+// somewhere between 2MB and 3MB — above it, a publish succeeds with no error
+// at any step and the canvas then silently shows "No artboards to show in
+// this view.", with nothing anywhere pointing at why (confirmed by
+// bisection on a real dense page). Ofir's explicit call on this: a working,
+// editable canvas covering the TOP of a page beats a complete-but-broken
+// one — so past a safety margin under that ceiling, automatically drop real
+// bottom-of-page content (by real DOM boundaries and actual geometry, never
+// by truncating the HTML text, which reliably breaks tag balance and the
+// trailing <script data-dc-script> block) until it's back under budget, and
+// publish THAT as the canvas — a real, working, edited-from-the-top result,
+// not a silent failure. `SIZE_BUDGET` intentionally sits well under the
+// observed 2-3MB failure range.
+const SIZE_BUDGET = 1_800_000;
+
+// First version of this dropped whole TOP-LEVEL children only. Real bug,
+// found live on coinmarketcap.com: its body is a handful of giant wrapper
+// divs, so getting under budget meant dropping ALL of them — a near-empty
+// shell. Second version recursed to drop individual bottommost LEAF nodes
+// instead — also wrong, a different real bug found on the same page: almost
+// every element here has its own explicit `height` baked into its inline
+// style (this tool bakes full computed style onto everything), so deleting
+// a deeply-nested leaf (a price span, an icon) doesn't shrink its ancestor
+// rows at all — those keep their own fixed height regardless of what's
+// still inside them. The visible result was hundreds of blank gaps punched
+// through the table instead of a shorter page — confirmed by rendering and
+// screenshotting the actual output file, not just checking the byte count.
+//
+// Fix: crop by an actual horizontal Y-line, not by picking individual nodes
+// to delete. `_captureTop`/`_captureBottom` are already relative to ROOT at
+// every depth (tagged during serialize(), see above), so "keep only what's
+// above cutoff px" is a single well-defined recursive filter: drop any
+// node whose top is at or past the line; keep any node whose top is above
+// it, and recurse into ITS children with the same absolute cutoff in case
+// part of it dips below the line. That's a real "keep the top N px, cut the
+// rest" — no blank gaps, no gutted sections, because a kept row is never
+// missing pieces from inside itself.
+function pruneToHeight(node, cutoff) {
+  if (!node || !Array.isArray(node.children)) return node;
+  const children = [];
+  for (const child of node.children) {
+    if (child && child.type === 'el' && child._captureTop !== undefined) {
+      if (child._captureTop >= cutoff) continue;
+      children.push(pruneToHeight(child, cutoff));
+    } else {
+      children.push(child);
+    }
+  }
+  return { ...node, children };
+}
+
+function countEls(node) {
+  if (!node) return 0;
+  let n = node.type === 'el' ? 1 : 0;
+  if (Array.isArray(node.children)) {
+    for (const c of node.children) n += countEls(c);
+  }
+  return n;
+}
+
+function buildDcHtml(treeArg, hVal) {
+  const bodyHtml = render(treeArg);
+  return `<!doctype html>
 <html lang="${escapeHtml(pageMeta.lang)}">
 <head>
   <meta charset="utf-8">
@@ -1192,11 +1273,11 @@ const dcHtml = `<!doctype html>
     a { color: inherit; text-decoration: none; }
   </style>
 </helmet>
-<div style="width:${w}px;height:${h}px;overflow:hidden;position:relative;">
+<div style="width:${w}px;height:${hVal}px;overflow:hidden;position:relative;">
 ${bodyHtml}
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":${w},"height":${h}}}'>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":${w},"height":${hVal}}}'>
 class Component extends DCLogic {
   renderVals() { return {}; }
 }
@@ -1204,29 +1285,48 @@ class Component extends DCLogic {
 </body>
 </html>
 `;
+}
+
+let finalTree = tree;
+let finalH = h;
+let dcHtml = buildDcHtml(finalTree, finalH);
+let cropped = false;
+if (Buffer.byteLength(dcHtml) > SIZE_BUDGET) {
+  cropped = true;
+  // Binary search the tallest cutoff (0..h) whose pruned tree still fits
+  // the byte budget. `lo` always holds the best-fitting cutoff found so
+  // far; if even cutoff 0 doesn't fit (pathological — a single element
+  // over budget on its own), lo=0's result is still used, best effort.
+  let lo = 0;
+  let hi = h;
+  let bestTree = pruneToHeight(tree, 0);
+  let bestHtml = buildDcHtml(bestTree, 0);
+  for (let iter = 0; iter < 24 && hi - lo > 4; iter++) {
+    const mid = Math.floor((lo + hi) / 2);
+    const candidateTree = pruneToHeight(tree, mid);
+    const candidateHtml = buildDcHtml(candidateTree, mid);
+    if (Buffer.byteLength(candidateHtml) <= SIZE_BUDGET) {
+      lo = mid;
+      bestTree = candidateTree;
+      bestHtml = candidateHtml;
+    } else {
+      hi = mid;
+    }
+  }
+  finalTree = bestTree;
+  finalH = lo;
+  dcHtml = bestHtml;
+}
 
 fs.writeFileSync(path.join(outDir, 'Main.dc.html'), dcHtml);
-console.log(`wrote ${path.join(outDir, 'Main.dc.html')} — root captured at ${w}x${h}px (real rendered size @ ${viewportWidth}px viewport), ${images.length} image(s)`);
-
-// The Design Artifact type has an undocumented single-artboard size ceiling
-// somewhere between 2MB and 3MB — above it, the canvas publishes with no
-// error at any step and then silently shows "No artboards to show in this
-// view." in the viewer, with nothing in any response to point at why.
-// Confirmed by bisection on a real dense page (linear.app): a 2MB artboard
-// rendered, a 3MB one from the same page did not. There is no reliable way
-// for this script to know the exact live threshold (it's an Artifact-type
-// implementation detail, not something in this repo), so this is a warning
-// with a safety margin, not a hard stop — a page can still legitimately be
-// this dense. Whoever runs `/capture` needs to see this BEFORE publishing,
-// not discover it after a silently blank canvas.
-const dcBytes = Buffer.byteLength(dcHtml);
-if (dcBytes > 1_800_000) {
+if (cropped) {
+  const originalCount = countEls(tree);
+  const keptCount = countEls(finalTree);
   console.error(
-    `WARNING: Main.dc.html is ${(dcBytes / 1_048_576).toFixed(2)}MB — the Design Artifact type's ` +
-    `single-artboard size ceiling is somewhere between 2MB and 3MB (undocumented, found by bisection, ` +
-    `not a hard number this script can check precisely). Publishing this as one artboard risks the ` +
-    `canvas showing "No artboards to show in this view." with no error anywhere. Consider capturing a ` +
-    `narrower selector, or splitting this page into multiple artboards (by real DOM boundaries, not by ` +
-    `truncating the HTML text) before publishing.`
+    `WARNING: capture exceeded the Design type's ~1.8MB safety budget — cropped the page height from ` +
+    `${h}px to the top ${finalH}px (${Math.round((finalH / h) * 100)}%) to fit, keeping ${keptCount} of ` +
+    `${originalCount} element(s). This is a real, working canvas covering the top of the page, not a ` +
+    `broken one — say so plainly in the report, don't present it as a complete capture.`
   );
 }
+console.log(`wrote ${path.join(outDir, 'Main.dc.html')} — root captured at ${w}x${finalH}px (real rendered size @ ${viewportWidth}px viewport${cropped ? `, cropped from ${h}px` : ''}), ${images.length} image(s)`);

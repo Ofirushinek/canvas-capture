@@ -2,6 +2,29 @@
 
 Capture any live webpage straight into your Claude Code conversation — the full drag/resize/restyle canvas editor opens right there, no separate app, no export/import round trip. Then put the edit back into your codebase without breaking a shared component or freezing live data.
 
+## Quickstart
+
+Paste these into a new Claude Code conversation, one at a time.
+
+**1. Get the tool:**
+
+```
+git clone https://github.com/Ofirushinek/canvas-capture.git && cd canvas-capture
+```
+
+**2. Capture a page** (swap in any live URL):
+
+```
+/capture https://plausible.io/plausible.io
+```
+
+If `/capture` isn't recognized (some chat surfaces don't load custom commands — only a real Claude Code
+terminal session does), ask this instead, same result:
+
+```
+Follow the steps in .claude/commands/capture.md for https://plausible.io/plausible.io
+```
+
 ## What this is
 
 Two parts, one job: move a real UI into the same canvas editor Claude Design uses, without leaving your conversation, and get an edit back into source safely.

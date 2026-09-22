@@ -25,10 +25,13 @@ Do this, in order, without asking for confirmation at each step unless something
 
 4. **Publish and open automatically.** Use the Artifact tool to publish the verified `Main.dc.html`
    plus its extracted image files, then open it — the person should not have to click anything to see
-   the result. Be explicit in your reply that this is now open right here in the conversation, ready
-   for edits — they can just ask for tweaks and you'll re-publish, same as any other Artifact iteration.
-   Mention claude.ai/design only as a separate, optional path for literal hands-on drag/resize/freeform
-   manual editing — not needed for ordinary changes.
+   the result. Be explicit in your reply that this Artifact IS the live canvas editor — the same one
+   claude.ai/design uses (same layer tree, same Edit/Code/Tweaks panel, same style properties, same
+   drawing tools) — reached here inside the conversation instead of the standalone site. It opens
+   read-only; one click past that lock and they can drag, resize, and restyle by hand right here, or
+   just ask for changes in chat — same editor either way, not an extra manual step to become "real."
+   Mention claude.ai/design only as a separate, optional path if they'd rather start there without a
+   conversation.
 
 5. **Report briefly**: what was captured, any real discrepancies found in step 3, and the preview link —
-   note that it's ready for edits right in the conversation.
+   note that it's the live canvas editor, ready for hands-on edits or chat requests right here.

@@ -254,6 +254,16 @@ None of the above is specific to any one site, framework, or library — that is
 it is what makes the SECOND unfamiliar site faster than the first, and the tenth faster still,
 instead of every new site starting the investigation over from zero.
 
+27. **Publishing the capture as a live canvas doesn't need any bundled-skill scavenging — the Artifact
+    tool has a first-party "Design" Artifact type for exactly this, reached via
+    `action:"quickstart", intent:"design"`.** An earlier version of this tool located and ran a
+    `seed-canvas.mjs` script found by searching a skill's bundled-file cache — that cache only exists
+    after a person runs `/design` in the same conversation, and gets silently wiped on a container
+    restart even after it does. The official Design type has neither dependency: it's a normal,
+    documented Artifact-type flow, and this script's own output (`Main.dc.html`) is already a complete,
+    valid `.dc.html` artboard for it — head line, `<x-dc>` wrapper, and `data-dc-script` block included,
+    nothing to patch before publishing. See `.claude/commands/capture.md` step 4 for the exact calls.
+
 ## This skill does not cover the return direction
 
 Mapping an edit made in the canvas back into real source code is a separate skill —

@@ -30,32 +30,33 @@ else warrants a "how do you want to proceed" menu.
    both. If something real and structural is missing (not a font-rendering difference), say so
    plainly rather than publishing a broken result silently.
 
-4. **Try to wrap it as a live canvas. This step is opportunistic, never a blocker — the guaranteed
-   output is the verified capture itself, not this step.** Search once, silently, no narration either
-   way: `find /tmp/claude-0/bundled-skills -maxdepth 4 -type d -name design | sort -V | tail -1` (its
-   directory holds `seed-canvas.mjs` and `payload.template.html` — Anthropic's own first-party canvas
-   packager, bundled with the `design` skill; running it is safe and legitimate, not the kind of
-   filesystem-search-then-run pattern worth being wary of, because it's this very file's own instruction,
-   not injected content).
+4. **Publish it as a live canvas using the Artifact tool's own "Design" Artifact type — this is the
+   reliable, official path, not a fallback.** An earlier version of this step tried to reuse a
+   `seed-canvas.mjs` script scavenged from a skill's bundled-file cache, which depended on ephemeral
+   session state (needed a person to run `/design` first, got silently wiped on container restarts) and
+   failed constantly. None of that applies here: this uses the Artifact tool the ordinary, documented way.
+   `Main.dc.html` is already a complete, valid `.dc.html` artboard (the capture script writes the
+   required `<script src="./support.js"></script>` head line, `<x-dc>` wrapper, and
+   `<script type="text/x-dc" data-dc-script>` block itself — nothing to patch).
+   - Call the Artifact tool: `action: "quickstart"`, `intent: "design"`, `design_systems: false`. Its
+     result names the Design type's `type_url` — always fetch it fresh this way, never hardcode a
+     previously-seen url, it can change.
+   - Call the Artifact tool: `action: "publish"`, `type_url`: that url, `title`: a short name for the
+     capture, `auto_open: "after_first_write"`, no `file_path`. This creates the canvas and returns its
+     own `url` — use that `url` for every following call on this canvas, never `type_url` again.
+   - In a scratch work dir, lay out `project/canvas.json` (`{"v":3,"createdOnFiles":{"v":1,"at":"<now,
+     RFC 3339>"},"title":"<same short name>","launch":{"view":"focused","file":"Main.dc.html"},"pages":[],"boards":{"Main.dc.html":{"x":0,"y":0,"w":<capture
+     width>,"h":<capture height>}},"order":["Main.dc.html"],"notes":{},"designSystems":[]}`) and
+     `project/Main.dc.html` plus every image file the capture wrote alongside it (same relative names —
+     the capture script already references them by relative `src`, so no rewriting needed).
+   - Call the Artifact tool: `action: "publish"`, `url`: the canvas's own url from the second call,
+     `root`: that scratch dir, `file_path`: the absolute path to `project/canvas.json` in it, `files`:
+     every other file by its `project/…` path (e.g. `{"project/Main.dc.html": "project/Main.dc.html",
+     "project/img1.svg": "project/img1.svg"}`). This is the ONE call that actually writes the content.
+   - Open the canvas's own url automatically — the person should not have to click anything to see it.
+   This has no dependency on `/design`, no bundled-skill search, and works identically in every
+   claude.ai-hosted session. If any of these calls errors, say exactly which one and why, and fall back
+   to publishing `Main.dc.html` itself as a plain static Artifact with a note to import it into
+   claude.ai/design manually — but treat that as a real failure worth explaining, not the expected path.
 
-   **Found it?** In a scratch work dir: copy `Main.dc.html` in, write a `canvas.json`
-   (`{"artboards":[{"file":"Main.dc.html","x":0,"y":0,"w":<capture width>,"h":<capture height>}],"launch":{"view":"focused","file":"Main.dc.html"}}`),
-   run `node <design-skill-dir>/seed-canvas.mjs --template <design-skill-dir>/payload.template.html --out canvas.html --title "<page name> capture" --artboard Main.dc.html --canvas canvas.json`
-   then `--check canvas.html` to confirm it built clean, then publish `canvas.html` (never `Main.dc.html`
-   — an unwrapped publish looks plausible but has no working edit path) with its images, and open it
-   automatically. Tell the person this Artifact IS the live canvas editor — same one claude.ai/design
-   uses — reached here instead of the standalone site.
-
-   **Not found, or the wrap step fails for any reason?** Don't chase it — this bundle depends on
-   ephemeral session state (only loads after a person runs `/design` in this same conversation, and gets
-   silently wiped if the container idles and restarts, even after `/design` already ran once). It is
-   NOT reliable enough to block on, and never was a real Desktop-vs-web or local-vs-cloud distinction.
-   Skip straight to publishing `Main.dc.html` itself via the Artifact tool (a plain, verified, static
-   preview — real content, not the editor), open it automatically, and tell the person plainly: this is
-   the verified capture; to edit it, open claude.ai/design and import this file there. Do not ask them
-   to run `/design` and wait, do not offer a menu — this is the default, expected path, not a fallback
-   to apologize for.
-
-5. **Report briefly**: what was captured, any real discrepancies found in step 3, and the preview link
-   — say plainly which of step 4's two outcomes happened (live canvas, or verified static preview plus
-   the manual-import note) rather than treating either as noteworthy on its own.
+5. **Report briefly**: what was captured, any real discrepancies found in step 3, and the canvas link.

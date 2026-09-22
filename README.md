@@ -16,14 +16,9 @@ Clone https://github.com/Ofirushinek/canvas-capture.git and cd into it.
 Follow .claude/commands/capture.md to capture ADD_YOUR_URL_HERE
 ```
 
-That's it. Repeat prompt 2 alone with a new URL for every capture after the first.
-
-You'll always get a verified, real capture. Whether it opens as a live editable canvas right there, or
-as a static preview with a one-line note to import it into claude.ai/design yourself, depends on
-session state outside this tool's control — both are real, useful output; neither is a failure.
-
-Want better odds of the live canvas: send `/design a blank page` once, by itself, right before prompt
-2 — optional, never required, ignore whatever it produces.
+That's it. Repeat prompt 2 alone with a new URL for every capture after the first — no `/design`, no
+extra setup, nothing to run first. You'll get a verified, real capture that opens as a live editable
+canvas right there in the conversation, every time.
 
 ## What this is
 

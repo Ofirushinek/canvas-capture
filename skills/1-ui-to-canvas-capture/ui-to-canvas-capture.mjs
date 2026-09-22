@@ -1018,6 +1018,11 @@ const dcHtml = `<!doctype html>
 ${bodyHtml}
 </div>
 </x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":${w},"height":${h}}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
 </body>
 </html>
 `;

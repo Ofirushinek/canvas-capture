@@ -38,13 +38,14 @@ No code — a judgment discipline for taking an edit made in the canvas and putt
 
 ## Install
 
-Requires Node.js 18+.
+Requires Node.js 18+ and Python 3 with Pillow (the capture script shells out to Python for image resizing).
 
 ```
 npm install playwright
+pip install Pillow
 ```
 
-On a locked-down network (corporate proxy, restricted egress), Playwright's browser-binary download can fail silently — `npm install` exits clean but the browser is missing. If the capture script errors on launch, run `npx playwright install chromium` and check its output directly.
+On a locked-down network (corporate proxy, restricted egress), Playwright's browser-binary download can fail silently — `npm install` exits clean but the browser is missing. If the capture script errors on launch, run `npx playwright install chromium` and check its output directly. In a sandboxed environment with a pre-installed Chromium build that doesn't match the npm-installed Playwright version, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to that build's path. If outbound requests need to go through a proxy, `HTTPS_PROXY` is picked up automatically for both Node's own requests and the browser's.
 
 ## Usage
 

@@ -289,6 +289,16 @@ const fontLinksRaw = await page.evaluate(() => {
 const fontLinks = fontLinksRaw.links.join('\n  ') + '\n  ' +
   (fontLinksRaw.fontFaceRules.length ? `<style>\n${fontLinksRaw.fontFaceRules.join('\n')}\n</style>` : '');
 
+// The Design Artifact type's own format spec requires <title> and a real
+// <html lang="..."> on every artboard — this tool's generated output was
+// the only artboard-producing path that omitted both. Read the real page's
+// own values so the capture inherits its actual title/language instead of
+// a placeholder.
+const pageMeta = await page.evaluate(() => ({
+  title: document.title || '',
+  lang: document.documentElement.lang || 'en',
+}));
+
 // The requested "just this" region is often several loose sibling elements
 // in the real DOM (a heading block + a separately-bordered table, with no
 // shared wrapper) rather than one element with a single selector. `group`
@@ -1012,6 +1022,86 @@ function styleAttr(style, node) {
   return decls.join(';');
 }
 
+// --- Safe post-capture style pruning ------------------------------------
+// Every captured element bakes all ~80 PROPS explicitly, regardless of
+// whether the value is meaningful (non-default) for that element — on a
+// dense real page this is routinely 90%+ of the output file's bytes.
+// Two provably-safe prunings, found and verified (0-pixel-diff, full-page
+// screenshot comparison, by property GROUP tested in isolation) on a real
+// capture:
+//
+// Rule A — inherited properties: if a child's baked value for an inherited
+// CSS property is IDENTICAL to its own immediate parent's baked value for
+// the same property, the child's declaration is redundant — removing it
+// makes the child inherit the exact same value from the still-present
+// parent declaration, always, by construction (every element here already
+// has every inherited property baked explicitly, so there is no real CSS
+// cascade to accidentally interrupt). `whiteSpace`/`textWrap` are left out
+// of this list even though both ARE spec-inherited: styleAttr()'s own
+// dropHeight/dropWidthForNowrap logic above branches on
+// `style.whiteSpace === 'normal'` being PRESENT on this exact node, so
+// pruning it here would silently change that unrelated behavior.
+//
+// Rule B — non-inherited properties, restricted to a verified-safe list:
+// strip a declaration that already equals the CSS spec's initial value —
+// but ONLY for properties confirmed to have no per-tag User-Agent-
+// stylesheet default that would differ from that initial value. This is
+// NOT true of margin/padding/background-color/border-width (table cells,
+// buttons, and other tags carry non-initial UA defaults for exactly these
+// — stripping an explicit override lets the UA default silently reappear,
+// a real measured regression) — deliberately excluded. border-radius is
+// also excluded: styleAttr() only emits the border-radius shorthand when
+// all 4 corner keys are present, so pruning a subset would silently
+// suppress the whole shorthand on a partially-rounded element.
+//
+// Rule C — border width/color: when a side's border-style computes to
+// 'none', the browser forces that side's computed border-width to 0
+// regardless of what was declared, so the width and color values are
+// provably irrelevant and always safe to drop once style is 'none'.
+const INHERITED_PROPS = [
+  'color', 'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight',
+  'letterSpacing', 'textAlign', 'textTransform', 'direction', 'listStyleType',
+  'fontFeatureSettings', 'fontVariationSettings', 'webkitTextFillColor',
+  'cursor', 'visibility',
+];
+const SAFE_INITIAL_VALUES = {
+  boxSizing: 'content-box',
+  position: 'static',
+  top: 'auto', right: 'auto', bottom: 'auto', left: 'auto', zIndex: 'auto',
+  boxShadow: 'none', opacity: '1', overflow: 'visible',
+  objectFit: 'fill', objectPosition: '50% 50%',
+  flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'normal',
+  alignItems: 'normal', alignSelf: 'auto', flexGrow: '0', flexShrink: '1',
+  flexBasis: 'auto', gap: 'normal', rowGap: 'normal', columnGap: 'normal',
+  gridTemplateColumns: 'none', gridTemplateRows: 'none',
+  gridColumn: 'auto', gridRow: 'auto', transform: 'none',
+};
+const BORDER_SIDES = ['Top', 'Right', 'Bottom', 'Left'];
+
+function pruneRedundantStyles(node, parentStyle) {
+  if (node.type === 'el' && node.style) {
+    const style = node.style;
+    if (parentStyle) {
+      for (const key of INHERITED_PROPS) {
+        if (style[key] !== undefined && style[key] === parentStyle[key]) delete style[key];
+      }
+    }
+    for (const [key, initial] of Object.entries(SAFE_INITIAL_VALUES)) {
+      if (style[key] === initial) delete style[key];
+    }
+    for (const side of BORDER_SIDES) {
+      if (style[`border${side}Style`] === 'none') {
+        delete style[`border${side}Width`];
+        delete style[`border${side}Color`];
+      }
+    }
+  }
+  if (node.children) {
+    const nextParentStyle = (node.type === 'el' && node.style) ? node.style : parentStyle;
+    for (const child of node.children) pruneRedundantStyles(child, nextParentStyle);
+  }
+}
+
 function escapeHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -1065,12 +1155,32 @@ if ((rootSelector === 'body' || rootSelector === 'html') && tree.style) {
   tree.style.height = `${h}px`;
   tree.style.overflow = 'visible';
 }
+// The captured root node keeps the REAL element's tag name (e.g. `body`,
+// when the default/whole-page selector was used) — serializing that
+// verbatim produces a SECOND, fully-styled <body> nested inside the
+// wrapper template's own real <body> below. Two <body> elements in one
+// document is invalid HTML5: a nested <body> START tag is a documented
+// no-op in the parsing algorithm (its attributes just merge onto the
+// existing one), but its matching END tag is NOT a no-op — it switches
+// the parser into "after body" insertion mode, silently relocating or
+// dropping everything that follows (including the <script data-dc-script>
+// block the canvas runtime's own parser looks for). Confirmed via the
+// canvas runtime's real artboard parser (a DOMParser + querySelector call,
+// read from the published Design type's own bundled code): it depends on
+// well-formed single-body HTML. Rename any document-structural root tag to
+// `div` in the OUTPUT ONLY — nothing downstream matches by tag name post-
+// capture, layout comes entirely from the baked inline `style` attribute.
+if (tree.type === 'el' && ['body', 'html', 'head'].includes(tree.tag)) {
+  tree.tag = 'div';
+}
+pruneRedundantStyles(tree, null);
 const bodyHtml = render(tree);
 
 const dcHtml = `<!doctype html>
-<html>
+<html lang="${escapeHtml(pageMeta.lang)}">
 <head>
   <meta charset="utf-8">
+  <title>${escapeHtml(pageMeta.title || new URL(url).hostname)}</title>
   ${fontLinks}
   <script src="./support.js"></script>
 </head>

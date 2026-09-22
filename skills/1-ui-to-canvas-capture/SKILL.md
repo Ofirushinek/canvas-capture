@@ -295,6 +295,39 @@ instead of every new site starting the investigation over from zero.
     37394px once it actually scrolled all the way through. Fix: re-read `document.body.scrollHeight` on
     every iteration of the loop's own condition, never cache it.
 
+31. **Capturing `body` (the default when no selector is given) emits an invalid nested `<body>` and can
+    silently kill the whole canvas.** The renderer serializes the captured root's REAL tag name — when
+    that's `body`, the output ends up with a second, fully-styled `<body>` nested inside the wrapper
+    template's own real `<body>`. Two `<body>` elements is invalid HTML5: a nested `<body>` START tag is
+    a documented no-op, but its matching END tag is not — it switches the parser into "after body" mode,
+    silently relocating or dropping everything after it, including the `<script data-dc-script>` block the
+    canvas runtime's own parser (confirmed by reading that parser's real code) depends on. Fix: rename a
+    document-structural root tag (`body`/`html`/`head`) to `div` in the output only — nothing downstream
+    matches by tag name, layout is entirely inline styles.
+32. **Every generated artboard needs its own `<title>` and a real `<html lang="...">`** — the Design
+    type's own format spec requires both; this tool's output was the only artboard-producing path that
+    omitted them. Fixed by reading the real page's `document.title` and `document.documentElement.lang`
+    and using them in the template (falls back to the URL's hostname if the page has no title).
+33. **Baking all ~80 captured CSS properties onto every element, unconditionally, is 90%+ of a dense
+    page's output size — most of it is redundant and safely prunable, but "redundant" needs real care.**
+    Two rules are provably safe and were verified with full-page 0-pixel-diff screenshot comparisons,
+    tested by PROPERTY GROUP in isolation (a combined pass that "looks safe" can still hide one unsafe
+    group in the mix): (A) an inherited property whose baked value matches its own immediate parent's
+    value is redundant — deleting it means the child inherits the identical value from the still-present
+    parent. (B) a non-inherited property equal to the CSS spec's initial value is safe to drop ONLY for
+    properties confirmed to have no per-tag User-Agent-stylesheet default that differs from that initial
+    value. **`margin`/`padding`/`background-color`/`border-width` are NOT safe for this** — table cells
+    default to non-zero padding, buttons to a non-transparent background, in the browser's own UA
+    stylesheet, so stripping an explicit `0`/`transparent` override lets that UA default silently
+    reappear (a real, measured regression: 3.7% of a page's pixels differed when padding/margin were
+    included in the prune). `border-radius` is also excluded here since the shorthand-collapse logic
+    elsewhere only fires when all 4 corner values are present — pruning a subset would suppress the whole
+    shorthand. (C) a border side's width/color is always safe to drop once that side's own `border-style`
+    is `none` — the browser forces computed border-width to 0 in that case regardless of what was
+    declared. `whiteSpace`/`textWrap`, though spec-inherited, are deliberately excluded from rule A: an
+    existing, unrelated fix (finding 8, the wrap-fragility one) branches on `style.whiteSpace` being
+    PRESENT on the exact node being rendered — pruning it here would silently change that other behavior.
+
 ## This skill does not cover the return direction
 
 Mapping an edit made in the canvas back into real source code is a separate skill —

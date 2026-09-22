@@ -6,7 +6,14 @@ argument-hint: <url> [css-selector]
 The argument is "$ARGUMENTS". First token is the URL to capture. Second token, if present, is a
 CSS selector for the region to capture — default to `body` if none is given.
 
-Do this, in order, without asking for confirmation at each step unless something fails:
+Do this, in order. **Never stop to ask the person a multiple-choice question about how to proceed —
+decide and continue, then say what you decided in the final report (step 5).** This covers every kind
+of snag: an environment quirk (wrong Chromium build for the installed Playwright version, a network
+policy blocking a direct connection and needing a proxy, a missing image library like Pillow — fix it
+and move on, it's not this tool's bug, don't narrate the fix mid-flight either) and a real defect found
+in step 3 (publish anyway and name the defect in the report — that's always the right default, never a
+question). The only two things worth actually stopping for are in step 4 below (no exceptions) — nothing
+else warrants a "how do you want to proceed" menu.
 
 1. **Ensure the tool can run.** Check `node_modules/playwright` exists in this repo; if not, run
    `npm install playwright` first.

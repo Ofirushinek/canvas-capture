@@ -1,5 +1,5 @@
 ---
-description: Capture a live webpage into a Claude Design canvas, verify it against the real page, and publish a preview link automatically.
+description: Capture a live webpage and open it right in this conversation as an editable Artifact, verified against the real page, ready for follow-up tweaks by just asking.
 argument-hint: <url> [css-selector]
 ---
 
@@ -24,9 +24,11 @@ Do this, in order, without asking for confirmation at each step unless something
    plainly rather than publishing a broken result silently.
 
 4. **Publish and open automatically.** Use the Artifact tool to publish the verified `Main.dc.html`
-   plus its extracted image files as a static preview page, then open it — the person should not
-   have to click anything to see the result. Be explicit in your reply that this is a static preview
-   (not the live, interactive claude.ai/design canvas) — publishing into the real canvas is still a
-   manual step: open claude.ai/design and import the file there yourself.
+   plus its extracted image files, then open it — the person should not have to click anything to see
+   the result. Be explicit in your reply that this is now open right here in the conversation, ready
+   for edits — they can just ask for tweaks and you'll re-publish, same as any other Artifact iteration.
+   Mention claude.ai/design only as a separate, optional path for literal hands-on drag/resize/freeform
+   manual editing — not needed for ordinary changes.
 
-5. **Report briefly**: what was captured, any real discrepancies found in step 3, and the preview link.
+5. **Report briefly**: what was captured, any real discrepancies found in step 3, and the preview link —
+   note that it's ready for edits right in the conversation.

@@ -106,7 +106,23 @@ await page.addInitScript(() => {
 // networkidle as three checkpoints of the SAME single navigation, each
 // with its own timeout; a networkidle timeout just means proceeding
 // without it, never restarting anything already rendered.
-await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+const navigationResponse = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+// A non-2xx response (a 502 from the target's own upstream, a 404, a login
+// wall) still loads SOME document — often a one-line error body, which the
+// browser wraps in a bare <pre> a few pixels tall. Nothing downstream here
+// checks HTTP status, so that error body silently became "the capture":
+// a ~15px-tall, near-empty Main.dc.html with no indication anything was
+// wrong. Confirmed live against a real 502 from plausible.io's own server.
+// Fail loud instead: this is the target's own real problem right now, not
+// something a retry or a selector change on our end can fix.
+if (navigationResponse && !navigationResponse.ok()) {
+  console.error(
+    `navigation failed: HTTP ${navigationResponse.status()} ${navigationResponse.statusText()} for ${url} ` +
+    `— the target server returned an error, not the page; aborting instead of capturing the error body.`
+  );
+  await browser.close();
+  process.exit(1);
+}
 try {
   await page.waitForLoadState('load', { timeout: 15000 });
 } catch (e) {

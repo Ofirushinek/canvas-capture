@@ -231,6 +231,16 @@ real stress test (an unfamiliar external site — nothing about it was known goi
     confirm exactly one remains and it's the element in question — not just sibling elements. A
     generalizable lesson beyond this one fix: any "is this the only thing here" check needs to ask about
     every kind of sibling a DOM node can have, not just the element kind.
+25. **Nothing checked the navigation's own HTTP status — a 502/404/error body silently became "the
+    capture."** A real 502 from plausible.io's own upstream ("upstream request failed") still loads a
+    document — the browser wraps a plain-text error body in a bare `<pre>`, a few pixels tall — and
+    the capture proceeded as if that were real page content, writing a near-empty `Main.dc.html` with
+    no warning. Confirmed live: the same URL, same script, same viewport returned this error on one run
+    and a real page on the next — a genuinely intermittent server-side fault, not a viewport or timing
+    bug in this tool. Fix: capture the `Response` from `page.goto()` and check `.ok()` before doing
+    anything else — a non-2xx status is the target's own problem right now, not something a selector
+    change or a longer wait fixes, so fail loud (stderr + non-zero exit) instead of silently capturing
+    the error page.
 
 None of the above is specific to any one site, framework, or library — that is the point. Following
 it is what makes the SECOND unfamiliar site faster than the first, and the tenth faster still,

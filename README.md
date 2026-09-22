@@ -12,10 +12,10 @@ Paste these into a new Claude Code conversation, one at a time.
 git clone https://github.com/Ofirushinek/canvas-capture.git && cd canvas-capture
 ```
 
-**2. Capture a page** (swap in any live URL):
+**2. Capture a page:**
 
 ```
-/capture https://plausible.io/plausible.io
+/capture <url>
 ```
 
 ## What this is

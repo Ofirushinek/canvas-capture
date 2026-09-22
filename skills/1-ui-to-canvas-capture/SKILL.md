@@ -264,6 +264,37 @@ instead of every new site starting the investigation over from zero.
     valid `.dc.html` artboard for it — head line, `<x-dc>` wrapper, and `data-dc-script` block included,
     nothing to patch before publishing. See `.claude/commands/capture.md` step 4 for the exact calls.
 
+28. **An un-attributed SVG's fallback size can be measured mid-transition, baking a temporary loading
+    state's size as if it were final.** The fix for a different, legitimate problem (a chart SVG sized
+    only via CSS percentages) reads `getBoundingClientRect()` on any SVG with no explicit
+    width/height — but a small icon (Tailwind `size-2.5`, meant to render ~10px) mid-`transition`
+    (fade/scale reveal, `@starting-style`-gated) can be caught at its full-width loading/skeleton size
+    and baked as e.g. `width="1424" height="1424"` — exactly the page width. The existing
+    infinite-animation wait (`animationIterationCount === 'infinite'`) only catches spinners; a one-shot
+    finite `transition` sails through it untouched. Confirmed by measuring the identical elements with a
+    standalone script outside the capture pipeline: correct 8×8/10×10px every time, ruling out a live-page
+    cause. Fix: also wait for `document.getAnimations({subtree:true})` to return empty (bounded, 8s) —
+    that call covers every animation AND transition in flight, finite or not, right after the scroll-through
+    step that's most likely to have triggered one.
+29. **`boundingBox()` on `body`/`html` can report the viewport height instead of the real page height,
+    silently, with no error — some pages pin `<body>` itself as the scroll container** (`overflow: hidden
+    auto`, height capped to the viewport — a common SPA "app shell" pattern) instead of growing in normal
+    document flow. `boundingBox()` reports body's own LAYOUT box either way, so on this pattern it
+    returns e.g. 1000px instead of the real, much taller scrollable content. Confirmed the SAME url
+    alternates between both patterns across loads. Fix: for a `body`/`html` root selector, compare against
+    `Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)` and take the larger —
+    AND separately override the root node's own baked `height`/`overflow` to match before rendering,
+    since otherwise the exported root element re-clips its own children right back down to the stale
+    height even after the outer wrapper is sized correctly.
+30. **A lazy-load scroll loop that computes its own bound ONCE, before scrolling, defeats its own
+    purpose.** `const max = document.body.scrollHeight` read before the loop starts captures the
+    PRE-scroll height — but the entire point of scrolling through the page is that it triggers lazy
+    content that makes the page TALLER as the loop runs. A bound fixed at the start stops the loop at the
+    original fold and never visits, therefore never triggers, whatever would have lazy-loaded further
+    down. Confirmed live: the same real dashboard measured `scrollHeight` 2951px before the loop ran and
+    37394px once it actually scrolled all the way through. Fix: re-read `document.body.scrollHeight` on
+    every iteration of the loop's own condition, never cache it.
+
 ## This skill does not cover the return direction
 
 Mapping an edit made in the canvas back into real source code is a separate skill —

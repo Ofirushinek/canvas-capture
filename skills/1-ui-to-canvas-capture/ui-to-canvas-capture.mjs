@@ -83,7 +83,18 @@ const PROPS = [
 // in-browser capture pass and the Node-side renderer need the same set.
 const TEXT_FLOW_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'span', 'li', 'label']);
 
-const browser = await chromium.launch({ args: ['--ignore-certificate-errors', '--disable-blink-features=AutomationControlled'] });
+// executablePath: lets a sandboxed environment pin a pre-installed Chromium
+// build when the npm-installed Playwright version expects a newer one than
+// what's on disk (undefined is a no-op — Playwright falls back to its own
+// default resolution). proxy: routes the browser itself through the same
+// outbound HTTPS proxy Node already uses — without it, a sandboxed
+// environment with an egress proxy can see the Node-side fetches succeed
+// while the browser's own requests get blocked/reset going direct.
+const browser = await chromium.launch({
+  executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+  args: ['--ignore-certificate-errors', '--disable-blink-features=AutomationControlled'],
+  proxy: process.env.HTTPS_PROXY ? { server: process.env.HTTPS_PROXY } : undefined,
+});
 // Playwright's default headless Chromium is trivially fingerprintable —
 // navigator.webdriver reads true and the UA string literally contains
 // "HeadlessChrome" — and a real anti-bot layer (or even simple client JS)
@@ -175,8 +186,16 @@ await page.waitForTimeout(800);
 // does that a stationary headless tab never did on its own.
 await page.evaluate(async () => {
   const step = 400;
-  const max = document.body.scrollHeight;
-  for (let y = 0; y < max; y += step) {
+  // Re-read scrollHeight every iteration, never cache it once up front: the
+  // whole point of this loop is that scrolling triggers lazy content that
+  // makes the page TALLER than it was before the loop started. A bound fixed
+  // at the pre-scroll height stops the loop at the ORIGINAL fold and never
+  // visits, so never triggers, whatever would have lazy-loaded further down.
+  // Confirmed live: the same real dashboard measured scrollHeight 2951px
+  // before this loop ran and 37394px once it actually finished scrolling
+  // through what lazy-loaded along the way — a fixed bound of 2951 would
+  // have silently truncated the whole capture to one early screenful.
+  for (let y = 0; y < document.body.scrollHeight; y += step) {
     window.scrollTo(0, y);
     await new Promise((r) => setTimeout(r, 250));
   }
@@ -211,6 +230,25 @@ try {
   }, undefined, { timeout: 15000 });
 } catch (e) {
   console.error('spinners never cleared within budget, continuing anyway:', e.message);
+}
+
+// The scroll-through above (to trigger lazy content) can itself land the
+// capture mid-transition: a row that just mounted or just got a live data
+// refresh commonly animates in (a fade/scale "reveal", a CSS `transition`
+// on width/opacity gated by `@starting-style`) — real, observed live: a
+// small icon SVG (Tailwind `size-2.5`, meant to render ~10px, no explicit
+// width/height attribute) baked as 1424×1424 — exactly the full captured
+// page width — because the moment of measurement caught it mid-transition
+// from a full-width loading/skeleton state to its real small size. The
+// infinite-animation wait above only catches spinners; it does nothing for
+// a one-shot, finite transition that's simply still running.
+// `document.getAnimations({subtree:true})` lists every CSS animation AND
+// transition currently in flight anywhere in the document, finite or not —
+// wait for that list to drain before measuring anything.
+try {
+  await page.waitForFunction(() => document.getAnimations({ subtree: true }).length === 0, undefined, { timeout: 8000 });
+} catch (e) {
+  console.error('transitions never settled within budget, continuing anyway:', e.message);
 }
 
 // Grab font <link>s and any @font-face rules, from the SAME page/context
@@ -375,6 +413,23 @@ if (groupMeta) {
     process.exit(1);
   }
   rootBox = await rootHandle.boundingBox();
+  // A full-page capture (root selector `body`/`html`) can land on a page
+  // whose <body> is itself the scroll container — `overflow: hidden auto`
+  // with a fixed height pinned to the viewport (a common SPA "app shell"
+  // pattern) — rather than growing to its content's real height in normal
+  // document flow. `boundingBox()` reports body's own LAYOUT box either
+  // way, so on this pattern it silently reports the viewport height (e.g.
+  // 1000px) instead of the actual, much taller scrollable content —
+  // truncating the capture to one screenful with no error. Confirmed live,
+  // intermittently, on the same real URL: the identical page loaded with
+  // body in normal flow (correct, tall boundingBox) on one run and with
+  // this pinned-height pattern on the next. `scrollHeight` reflects the
+  // real full content extent regardless of which pattern is active, so
+  // prefer it whenever it exceeds the measured box.
+  if ((rootSelector === 'body' || rootSelector === 'html') && rootBox) {
+    const scrollH = await page.evaluate(() => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight));
+    if (scrollH > rootBox.height) rootBox = { ...rootBox, height: scrollH };
+  }
   // A selector that resolves to a semantic content tag (`main`, a
   // dashboard's own inner wrapper) commonly has a real `<header>`/`<nav>`
   // as a SIBLING, not an ancestor — visually part of "the page" to anyone
@@ -995,9 +1050,22 @@ function render(node) {
   return `${openTag}${inner}</${node.tag}>`;
 }
 
-const bodyHtml = render(tree);
 const w = Math.round(rootBox.width);
 const h = Math.round(rootBox.height);
+// The rootBox height fix above (scrollHeight over a clipped boundingBox)
+// only changes what the OUTER wrapper is sized to — the root node's own
+// captured style still carries whatever `height`/`overflow` the live page's
+// body actually had (e.g. `height:1000px;overflow:hidden auto`, the pinned
+// "app shell" pattern), and styleAttr() bakes those verbatim. Left alone,
+// the wrapper would correctly be tall, but the body element rendered
+// straight inside it would immediately re-clip its own children back down
+// to that same stale height — silently undoing the fix. Override both on
+// the root node only, to match the corrected outer size.
+if ((rootSelector === 'body' || rootSelector === 'html') && tree.style) {
+  tree.style.height = `${h}px`;
+  tree.style.overflow = 'visible';
+}
+const bodyHtml = render(tree);
 
 const dcHtml = `<!doctype html>
 <html>

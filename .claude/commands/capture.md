@@ -29,6 +29,14 @@ else warrants a "how do you want to proceed" menu.
    width the capture used) and take a matching screenshot of the real live page/selector. Look at
    both. If something real and structural is missing (not a font-rendering difference), say so
    plainly rather than publishing a broken result silently.
+   **A same-looking pair of screenshots is not proof of correctness if both came from the same flawed
+   pipeline** — a real bug this exact check missed once: a timing issue that baked a handful of icons at
+   the full page width hit the capture AND the "live" reference screenshot the same way, independently,
+   because both were rendered by the same script; they matched each other and were both wrong. After
+   comparing screenshots, also open the actual published canvas (or its `Main.dc.html` rendered full-page,
+   not cropped) and look at it as a whole once before calling this step done — an icon or element sized
+   wildly out of proportion, or a height that's a small fraction of what the page should be, is the kind
+   of defect a side-by-side crop comparison can miss entirely.
 
 4. **Publish it as a live canvas using the Artifact tool's own "Design" Artifact type — this is the
    reliable, official path, not a fallback.** An earlier version of this step tried to reuse a
@@ -49,6 +57,11 @@ else warrants a "how do you want to proceed" menu.
      width>,"h":<capture height>}},"order":["Main.dc.html"],"notes":{},"designSystems":[]}`) and
      `project/Main.dc.html` plus every image file the capture wrote alongside it (same relative names —
      the capture script already references them by relative `src`, so no rewriting needed).
+     **The Design type caps a board's `h` at 8000px** — if the capture's real height is taller than
+     that, the canvas.json write silently clamps it while `Main.dc.html` itself stays the real height,
+     which mismatches the frame against its content. A capture legitimately over 8000px tall is rare but
+     real (a very long page, or one inflated by an unfixed bug); if it happens, say so plainly in the
+     report rather than letting it look like an ordinary successful publish.
    - Call the Artifact tool: `action: "publish"`, `url`: the canvas's own url from the second call,
      `root`: that scratch dir, `file_path`: the absolute path to `project/canvas.json` in it, `files`:
      every other file by its `project/…` path (e.g. `{"project/Main.dc.html": "project/Main.dc.html",

@@ -62,6 +62,14 @@ else warrants a "how do you want to proceed" menu.
      which mismatches the frame against its content. A capture legitimately over 8000px tall is rare but
      real (a very long page, or one inflated by an unfixed bug); if it happens, say so plainly in the
      report rather than letting it look like an ordinary successful publish.
+     **The Design type also has an undocumented single-artboard BYTE-SIZE ceiling, somewhere between 2MB
+     and 3MB** — confirmed by bisection on a real dense page (2MB artboard rendered, 3MB from the same
+     page did not). Above it, the publish itself succeeds with no error and the canvas shows "No
+     artboards to show in this view." with nothing pointing at why. The capture script itself now warns
+     on stderr when `Main.dc.html` exceeds 1.8MB (a safety margin under the observed range) — take that
+     warning seriously before publishing rather than finding out after. If it fires, this needs a
+     narrower selector or splitting the page into multiple artboards by real DOM boundaries (not by
+     truncating the HTML text) — treat that as real, reportable work, not something to silently skip.
    - Call the Artifact tool: `action: "publish"`, `url`: the canvas's own url from the second call,
      `root`: that scratch dir, `file_path`: the absolute path to `project/canvas.json` in it, `files`:
      every other file by its `project/…` path (e.g. `{"project/Main.dc.html": "project/Main.dc.html",

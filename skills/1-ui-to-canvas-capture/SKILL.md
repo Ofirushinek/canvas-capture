@@ -328,6 +328,33 @@ instead of every new site starting the investigation over from zero.
     existing, unrelated fix (finding 8, the wrap-fragility one) branches on `style.whiteSpace` being
     PRESENT on the exact node being rendered — pruning it here would silently change that other behavior.
 
+34. **The Design Artifact type has an undocumented single-artboard byte-size ceiling, somewhere between
+    2MB and 3MB — above it, publish succeeds with no error and the canvas is silently blank** ("No
+    artboards to show in this view.", no diagnostic anywhere). Confirmed by bisection on a real dense
+    page (linear.app, ~3400 tags): a 2MB artboard rendered correctly, a 3MB one from the SAME page did
+    not. This is unrelated to the 8000px height cap (finding 33's sibling note) — a tall-but-narrow
+    capture can hit the height cap while staying well under this size ceiling, and a short-but-dense
+    capture can hit this ceiling while staying well under the height cap; they're two independent limits.
+    The capture script now warns on stderr above 1.8MB (a safety margin) — take it seriously; a page
+    dense enough to trip it needs a narrower selector or splitting into multiple artboards by real DOM
+    boundaries, not truncating the HTML text (naive text truncation reliably breaks tag balance and any
+    trailing `<script data-dc-script>` block).
+35. **Splitting one capture into several artboards by DOM boundaries can silently lose page-level
+    background/text-color/font, if the split pieces are not the original body/html root.** Confirmed live:
+    a dark-mode site's `background-color`/`color`/`font-family` were declared once, high up (effectively
+    the page's own "canvas" ground), and every split fragment inherited them correctly in the LIVE page
+    context but not once cut apart into independent `.dc.html` files rooted at a descendant — each
+    fragment came out with default (white/black) background and unreadable text. If splitting a capture,
+    explicitly read the real page's own `background-color`/`color`/`font-family` (from the element that
+    actually carries them, commonly `body` or `html`) and inject them as a literal CSS rule
+    (`body{background:…;color:…;font-family:…}`) in every split fragment's own `<helmet><style>` — don't
+    assume a descendant fragment carries an equivalent inline declaration on its own.
+36. **Open, unconfirmed finding — not yet root-caused:** a real capture (linear.app) came out with 3
+    illustration graphics rendered as empty boxes containing only fallback caption text ("FIG 0.1" etc.)
+    where a real image/illustration should be — the graphic itself was not captured. Not yet investigated
+    whether this is an SVG-with-`<use>`-referencing-external-`<defs>` gap, a lazy-loaded/canvas-drawn
+    illustration, or something else. Flagging so the next session that hits it doesn't start from zero.
+
 ## This skill does not cover the return direction
 
 Mapping an edit made in the canvas back into real source code is a separate skill —

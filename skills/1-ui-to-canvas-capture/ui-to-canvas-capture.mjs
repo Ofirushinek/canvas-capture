@@ -1207,3 +1207,26 @@ class Component extends DCLogic {
 
 fs.writeFileSync(path.join(outDir, 'Main.dc.html'), dcHtml);
 console.log(`wrote ${path.join(outDir, 'Main.dc.html')} — root captured at ${w}x${h}px (real rendered size @ ${viewportWidth}px viewport), ${images.length} image(s)`);
+
+// The Design Artifact type has an undocumented single-artboard size ceiling
+// somewhere between 2MB and 3MB — above it, the canvas publishes with no
+// error at any step and then silently shows "No artboards to show in this
+// view." in the viewer, with nothing in any response to point at why.
+// Confirmed by bisection on a real dense page (linear.app): a 2MB artboard
+// rendered, a 3MB one from the same page did not. There is no reliable way
+// for this script to know the exact live threshold (it's an Artifact-type
+// implementation detail, not something in this repo), so this is a warning
+// with a safety margin, not a hard stop — a page can still legitimately be
+// this dense. Whoever runs `/capture` needs to see this BEFORE publishing,
+// not discover it after a silently blank canvas.
+const dcBytes = Buffer.byteLength(dcHtml);
+if (dcBytes > 1_800_000) {
+  console.error(
+    `WARNING: Main.dc.html is ${(dcBytes / 1_048_576).toFixed(2)}MB — the Design Artifact type's ` +
+    `single-artboard size ceiling is somewhere between 2MB and 3MB (undocumented, found by bisection, ` +
+    `not a hard number this script can check precisely). Publishing this as one artboard risks the ` +
+    `canvas showing "No artboards to show in this view." with no error anywhere. Consider capturing a ` +
+    `narrower selector, or splitting this page into multiple artboards (by real DOM boundaries, not by ` +
+    `truncating the HTML text) before publishing.`
+  );
+}

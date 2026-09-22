@@ -26,18 +26,20 @@ Do this, in order, without asking for confirmation at each step unless something
 4. **Wrap it as a canvas, then publish that — never publish `Main.dc.html` directly.** Publishing the
    raw captured HTML file gives an inert page: no layer tree, no Edit panel, no read-only lock to click
    past, nothing to drag or restyle — just a static render. That is NOT this tool's output; it is a
-   common mistake this step exists to prevent. The actual editor comes from a canvas packager bundled
-   with the session itself — confirmed present in a claude.ai-hosted Claude Code session (the web app at
-   claude.ai/code), confirmed ABSENT in the standalone Desktop app (a real search there, across the app
-   bundle and Claude config directories, found nothing). Locate it fresh each run rather than hardcoding
-   a version:
-   `find /tmp/claude-0/bundled-skills -maxdepth 4 -type d -name design | sort -V | tail -1` (picks the
-   highest bundled version if more than one is present; its directory holds
-   `seed-canvas.mjs` and `payload.template.html`).
-   **If that search finds nothing — this session cannot do this step. Do not improvise a menu of
-   alternatives or ask the user how to proceed. Say plainly: this capture (`Main.dc.html`, saved at
-   `<outDir>`) is ready, but wrapping it as a live canvas needs a claude.ai-hosted session — paste it
-   into a claude.ai/code browser tab and ask it to open the capture as a canvas there. Stop.**
+   common mistake this step exists to prevent. The actual editor comes from the bundled `design` skill's
+   packager (`seed-canvas.mjs` + `payload.template.html`) — and that bundle is fetched into this
+   session's cache **only after a human runs `/design` at least once in this same conversation.** It is
+   NOT pre-loaded at session start, and an agent cannot trigger it itself (the `design` skill blocks
+   model-invocation by design — it must come from the person). This is the real, confirmed cause of "it's
+   not there": not Desktop vs. web, not local vs. cloud — literally whether `/design` has run here yet.
+   Search for it fresh each run rather than hardcoding a version:
+   `find /tmp/claude-0/bundled-skills -maxdepth 4 -type d -name design | sort -V | tail -1` (its
+   directory holds `seed-canvas.mjs` and `payload.template.html`).
+   **If that search finds nothing: do not declare this session incapable, and do not improvise a menu.**
+   Say plainly: this capture (`Main.dc.html`, saved at `<outDir>`) is ready, but the canvas-editor bundle
+   hasn't loaded in this conversation yet. Ask the person to run `/design` once themselves (any throwaway
+   prompt — its own output can be ignored), then ask to retry this step; the same session, no new one
+   needed. Stop there — do not proceed until they've done that and asked you to continue.
    Found it? Continue, in a scratch work dir:
    - Copy `Main.dc.html` in.
    - Write a `canvas.json` next to it: `{"artboards":[{"file":"Main.dc.html","x":0,"y":0,"w":<capture width>,"h":<capture height>}],"launch":{"view":"focused","file":"Main.dc.html"}}`.

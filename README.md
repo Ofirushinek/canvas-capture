@@ -18,9 +18,12 @@ same turn.
 Already have the repo cloned in this conversation? `/capture <url>` alone does the same thing, faster,
 for every capture after the first.
 
-⚠️ **The "opens as an editable canvas" part needs a cloud-container session, not a session working
-against a local folder.** Works fine in Claude Desktop as long as the conversation is running in one of
-its cloud containers — the split isn't Desktop vs. browser, it's cloud session vs. local folder.
+⚠️ **The "opens as an editable canvas" part needs `/design` to have run at least once in this same
+conversation first.** That's what loads the canvas-editor bundle this tool wraps your capture with —
+it isn't preloaded at session start, and an agent can't trigger it on its own (`/design` only runs from
+a person typing it). If `/capture` says the bundle isn't there yet, run `/design` once yourself (any
+throwaway prompt, its output doesn't matter) in the same conversation, then ask for `/capture` again.
+Not a Desktop-vs-web or cloud-vs-local thing — confirmed by testing both ways.
 
 ## What this is
 

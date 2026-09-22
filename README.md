@@ -4,25 +4,25 @@ Capture any live webpage straight into your Claude Code conversation — the ful
 
 ## Quickstart
 
-In a new Claude Code conversation, send these two messages, in order:
+In a new Claude Code conversation, send these three prompts, one at a time, in order:
 
-**1.** `/design` — send it alone, on its own, and let it finish. This loads the canvas-editor bundle
-the second step wraps your capture with. It only has to happen once per conversation, and only a
-person can trigger it — an agent can't send this one for you, which is why it can't be folded into
-the message below. Whatever it produces doesn't matter; you can ignore it.
-
-**2.** Then paste this, with the URL you want:
-
+**1.**
 ```
-Clone https://github.com/Ofirushinek/canvas-capture.git, cd into it, and follow
-.claude/commands/capture.md to capture ADD_YOUR_URL_HERE
+Clone https://github.com/Ofirushinek/canvas-capture.git and cd into it.
 ```
 
-Claude gets the tool, installs Playwright if it isn't already there, captures the page, verifies it
-against the real thing, and opens the result as an editable canvas.
+**2.**
+```
+/design
+```
 
-Already have the repo cloned and `/design` already run in this conversation? `/capture <url>` alone
-does the same thing as step 2, faster, for every capture after the first.
+**3.**
+```
+Follow .claude/commands/capture.md to capture ADD_YOUR_URL_HERE
+```
+
+After that, repeat prompt 3 alone with a new URL for every capture after the first — 1 and 2 don't
+need to happen again in the same conversation.
 
 ## What this is
 

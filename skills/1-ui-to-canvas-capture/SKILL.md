@@ -242,6 +242,14 @@ real stress test (an unfamiliar external site — nothing about it was known goi
     change or a longer wait fixes, so fail loud (stderr + non-zero exit) instead of silently capturing
     the error page.
 
+26. **The mobile-first default viewport (390px) surprises operators who expect desktop.** Nobody
+    passes a width explicitly through `/capture`, so the script's own default silently decided it —
+    and a dashboard/marketing page rendered at iPhone width stacks its layout completely differently
+    (KPI tiles 2-per-row instead of 6, truncated panels), which reads as a capture bug rather than an
+    unannounced default. Changed the default to 1440 (desktop) to match what operators actually mean
+    by "capture this page" unless told otherwise — the tool still takes an explicit width for anyone
+    who wants mobile.
+
 None of the above is specific to any one site, framework, or library — that is the point. Following
 it is what makes the SECOND unfamiliar site faster than the first, and the tenth faster still,
 instead of every new site starting the investigation over from zero.

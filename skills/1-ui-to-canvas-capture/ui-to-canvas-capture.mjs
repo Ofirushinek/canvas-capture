@@ -43,7 +43,15 @@ const STEPS = (stepsArg || '').split('|').filter(Boolean).map((s) => {
   const idx = s.indexOf(':');
   return { kind: s.slice(0, idx), arg: s.slice(idx + 1) };
 });
-const viewportWidth = parseInt(vw || '390', 10); // real default: iPhone-class width, not a guess
+// Was 390 (iPhone-class) by design — but the operator (human or the /capture
+// command, which never passes this arg) reasonably expects "capture this
+// page" to mean desktop unless told otherwise, especially for dashboards
+// and marketing pages built desktop-first. Confirmed live: same URL, same
+// script, no explicit width -> silently rendered mobile-stacked KPI cards
+// and a truncated dashboard, mistaken for a capture bug rather than a
+// viewport default nobody asked for. 1440 matches this tool's own other
+// desktop captures and claude.ai/design's default canvas width.
+const viewportWidth = parseInt(vw || '1440', 10);
 
 fs.mkdirSync(outDir, { recursive: true });
 
@@ -75,8 +83,25 @@ const PROPS = [
 // in-browser capture pass and the Node-side renderer need the same set.
 const TEXT_FLOW_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'span', 'li', 'label']);
 
-const browser = await chromium.launch({ args: ['--ignore-certificate-errors'] });
-const page = await browser.newPage({ viewport: { width: viewportWidth, height: 1000 }, ignoreHTTPSErrors: true });
+const browser = await chromium.launch({ args: ['--ignore-certificate-errors', '--disable-blink-features=AutomationControlled'] });
+// Playwright's default headless Chromium is trivially fingerprintable —
+// navigator.webdriver reads true and the UA string literally contains
+// "HeadlessChrome" — and a real anti-bot layer (or even simple client JS)
+// can and does branch on either one. Confirmed live: the exact same URL
+// served a real human browser (Ofir's own Chrome) the live analytics
+// dashboard, while this tool's default fingerprint got served a static
+// "you just saw the demo" CTA fallback instead — not a site content
+// change, a bot-detection branch. A believable UA plus zeroing
+// navigator.webdriver before any page script runs is the standard,
+// minimal fix — not full stealth, just removing the two loudest tells.
+const page = await browser.newPage({
+  viewport: { width: viewportWidth, height: 1000 },
+  ignoreHTTPSErrors: true,
+  userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+});
+await page.addInitScript(() => {
+  Object.defineProperty(navigator, 'webdriver', { get: () => false });
+});
 
 // Route around the known "Supabase CDN blocked -> whole page blank" bug
 // (already logged, not this tool's job to fix) so capture can proceed.

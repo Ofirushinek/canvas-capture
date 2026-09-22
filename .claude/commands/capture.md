@@ -37,6 +37,17 @@ else warrants a "how do you want to proceed" menu.
    not cropped) and look at it as a whole once before calling this step done — an icon or element sized
    wildly out of proportion, or a height that's a small fraction of what the page should be, is the kind
    of defect a side-by-side crop comparison can miss entirely.
+   **A screenshot match proves visual fidelity, not that the Design canvas will render it at all —
+   these are different failure modes and this check only catches the first.** Real bug, found live on
+   apple.com: capturing the default `body` selector serialized a nested `<body>` inside the output's own
+   wrapper `<body>`. A plain browser (and Playwright's own Chromium) parses that leniently enough to
+   render visually correct — matching the live screenshot perfectly — but the Design canvas's own
+   artboard parser does not tolerate it and silently drops the whole board with zero error surfaced. This
+   is now fixed at the source (a captured root's tag is renamed if it collides with `body`/`html`/`head`),
+   but the LESSON generalizes: if a real "the canvas is empty / no artboards to show" report ever comes
+   back despite step 3 passing, treat it as a DC-parser-level structural bug first (a reserved-tag
+   collision, an unbalanced tag, something a lenient browser tolerated silently) — not a pan/zoom/caching
+   glitch to explain away, and not something a browser screenshot re-check can rule out.
 
 4. **Publish it as a live canvas using the Artifact tool's own "Design" Artifact type — this is the
    reliable, official path, not a fallback.** An earlier version of this step tried to reuse a

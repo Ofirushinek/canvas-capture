@@ -371,6 +371,32 @@ instead of every new site starting the investigation over from zero.
     line whose "keep everything starting above it, recurse into anything straddling it" filter still fits
     the byte budget. This is a real "keep the top N px" crop with no blank gaps and no gutted sections —
     confirmed by rendering and screenshotting the actual cropped output, not just its byte count.
+38. **A screenshot-diff verification pass can pass cleanly while the Design canvas still renders
+    nothing — these are different failure modes.** Confirmed a 3rd time on apple.com, independently, in a
+    separate session: the reserved-tag nested-`<body>` bug (finding 31) rendered visually identical to
+    the live page in a plain Chromium screenshot both before AND after fix — a lenient browser parses a
+    stray nested `<body>` fine, the Design canvas's own artboard parser does not, and drops the whole
+    board silently. The reserved-tag rename fix (finding 31, `['body','html','head'].includes(tree.tag)`)
+    already covers all three structural tags, not just `body` — confirmed by reading the code, this was
+    never body-only. If a real "canvas is empty" report ever comes back despite a passing screenshot
+    check, treat it as a DC-parser structural bug first, not a pan/zoom/caching issue to explain away.
+39. **Dead end worth recording, so nobody re-chases it:** `<picture>`/`<source>` (responsive-image
+    markup) is NOT a cause of a blank Design canvas. Tested directly on apple.com (30 occurrences
+    rewritten to plain `<div>`/`<img>`, verified visually unchanged) while chasing the bug in finding 38
+    — changed nothing, because the real cause was the nested-`<body>` structural bug elsewhere in the
+    same file. `<picture>`/`<source>` renders fine once the file is otherwise well-formed.
+40. **A continuously-looping CSS animation (an infinite hero rotation, not a one-shot transition) can
+    never satisfy the "wait for `getAnimations()` to drain" fix from finding 30 — there's nothing to
+    finish, so it always times out and captures an arbitrary mid-rotation frame.** Confirmed live on
+    apple.com: the hero's CTA button was captured offset to the right, mid-rotation, matching the
+    script's own "transitions never settled within budget" warning. Fix: freeze every CSS animation
+    (`animation-play-state: paused !important` on `*`) right before any style/geometry read, once the
+    drain-wait has either succeeded or given up. This doesn't fix WHICH frame gets captured — that stays
+    arbitrary — but makes it the SAME frame for every subsequent read in this run (the main serialize
+    pass, a screenshot placeholder, a re-measured `boundingBox()`), instead of each read racing real
+    elapsed time independently and potentially disagreeing with each other. Doesn't help at all for a
+    JS-driven (rAF/state-loop) carousel — `animation-play-state` only touches real CSS `@keyframes`
+    animations — that class of hero is a genuinely open, unresolved limitation.
 
 ## This skill does not cover the return direction
 

@@ -251,6 +251,22 @@ try {
   console.error('transitions never settled within budget, continuing anyway:', e.message);
 }
 
+// A continuously-looping hero (an infinite CSS `animation`, not a one-shot
+// transition) can never satisfy the drain-wait above — there's nothing to
+// finish, so it always times out and "continues anyway" at whatever
+// arbitrary frame the animation happens to be on. Real bug, found live on
+// apple.com's rotating hero: the CTA button was captured offset to the
+// right, mid-rotation. Freezing every CSS animation right before any
+// style/geometry read at least makes that arbitrary frame CONSISTENT for
+// the rest of this run — every later read (the main serialize pass, a
+// screenshot placeholder, a re-measured boundingBox) sees the same frozen
+// frame instead of each one racing real elapsed time independently. This
+// can't fix "which frame" gets captured, and it can't touch a JS-driven
+// (rAF/state-loop) carousel at all — `animation-play-state` only affects
+// real CSS `@keyframes` animations — so this is a determinism floor, not a
+// full fix for every kind of continuously-moving hero.
+await page.addStyleTag({ content: '*, *::before, *::after { animation-play-state: paused !important; }' });
+
 // Grab font <link>s and any @font-face rules, from the SAME page/context
 // the capture is about to run in. Icon-ligature fonts (Google's "Material
 // Icons" / "Google Symbols": the icon is literal text like "settings" or

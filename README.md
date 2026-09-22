@@ -4,19 +4,19 @@ Capture any live webpage straight into your Claude Code conversation — the ful
 
 ## Quickstart
 
-Paste these into a new Claude Code conversation, one at a time.
-
-**1. Get the tool:**
+Paste this one message into a new Claude Code conversation — replace the URL with the page you want:
 
 ```
-git clone https://github.com/Ofirushinek/canvas-capture.git && cd canvas-capture
+Clone https://github.com/Ofirushinek/canvas-capture.git, cd into it, and follow
+.claude/commands/capture.md to capture https://example.com
 ```
 
-**2. Capture a page:**
+That's it — one paste. Claude gets the tool, installs Playwright if it isn't already there, captures
+the page, verifies it against the real thing, and opens the result as an editable canvas, all in the
+same turn.
 
-```
-/capture <url>
-```
+Already have the repo cloned in this conversation? `/capture <url>` alone does the same thing, faster,
+for every capture after the first.
 
 ## What this is
 

@@ -8,7 +8,7 @@ Paste this one message into a new Claude Code conversation — replace the URL w
 
 ```
 Clone https://github.com/Ofirushinek/canvas-capture.git, cd into it, and follow
-.claude/commands/capture.md to capture https://example.com
+.claude/commands/capture.md to capture ADD_YOUR_URL_HERE
 ```
 
 That's it — one paste. Claude gets the tool, installs Playwright if it isn't already there, captures

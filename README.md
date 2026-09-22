@@ -18,13 +18,6 @@ git clone https://github.com/Ofirushinek/canvas-capture.git && cd canvas-capture
 /capture https://plausible.io/plausible.io
 ```
 
-If `/capture` isn't recognized (some chat surfaces don't load custom commands — only a real Claude Code
-terminal session does), ask this instead, same result:
-
-```
-Follow the steps in .claude/commands/capture.md for https://plausible.io/plausible.io
-```
-
 ## What this is
 
 Two parts, one job: move a real UI into the same canvas editor Claude Design uses, without leaving your conversation, and get an edit back into source safely.

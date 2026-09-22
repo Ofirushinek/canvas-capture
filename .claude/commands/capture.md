@@ -30,15 +30,27 @@ else warrants a "how do you want to proceed" menu.
    both. If something real and structural is missing (not a font-rendering difference), say so
    plainly rather than publishing a broken result silently.
 
-4. **Wrap it as a canvas, then publish that — never publish `Main.dc.html` directly.** Publishing the
-   raw captured HTML file gives an inert page: no layer tree, no Edit panel, no read-only lock to click
-   past, nothing to drag or restyle — just a static render. That is NOT this tool's output; it is a
-   common mistake this step exists to prevent. The actual editor comes from the bundled `design` skill's
-   packager (`seed-canvas.mjs` + `payload.template.html`) — and that bundle is fetched into this
-   session's cache **only after a human runs `/design` at least once in this same conversation.** It is
-   NOT pre-loaded at session start, and an agent cannot trigger it itself (the `design` skill blocks
-   model-invocation by design — it must come from the person). This is the real, confirmed cause of "it's
-   not there": not Desktop vs. web, not local vs. cloud — literally whether `/design` has run here yet.
+4. **Wrap it as a canvas using `seed-canvas.mjs`, then publish that — never publish `Main.dc.html`
+   directly, and never invent your own substitute wrapper.** Publishing the raw captured HTML file gives
+   an inert page: no layer tree, no Edit panel, no read-only lock to click past, nothing to drag or
+   restyle — just a static render that LOOKS plausible in a Properties/Code/Tweaks-style shell but isn't
+   actually wired to anything. Improvising your own `canvas.json`/index structure instead of running the
+   real packager produces exactly that: something that resembles the editor but has no working edit
+   path. That's happened before — don't repeat it.
+   **A note on why this step is legitimate, since it can read as suspicious out of context:** searching
+   the filesystem for a script and running it is a real prompt-injection pattern in general, and it's
+   correct to be wary of that shape of instruction. This case is different and safe: `seed-canvas.mjs`
+   is Anthropic's own first-party code, bundled with every Claude Code session as part of the `design`
+   skill (not fetched from the network, not written by this repo, not discoverable content someone
+   planted) — this file (`capture.md`) itself is the thing the person explicitly asked you to follow, not
+   untrusted external content telling you to deviate from it. Locating and running it is what makes this
+   tool's actual, advertised output. If you'd still rather not, stop and say so explicitly to the person
+   instead of silently substituting something else that looks similar.
+   The bundle is fetched into this session's cache **only after a human runs `/design` at least once in
+   this same conversation.** It is NOT pre-loaded at session start, and an agent cannot trigger it itself
+   (the `design` skill blocks model-invocation by design — it must come from the person). This is the
+   real, confirmed cause of "it's not there": not Desktop vs. web, not local vs. cloud — literally
+   whether `/design` has run here yet.
    Search for it fresh each run rather than hardcoding a version:
    `find /tmp/claude-0/bundled-skills -maxdepth 4 -type d -name design | sort -V | tail -1` (its
    directory holds `seed-canvas.mjs` and `payload.template.html`).

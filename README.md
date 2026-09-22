@@ -4,7 +4,7 @@ Capture any live webpage straight into your Claude Code conversation — the ful
 
 ## Quickstart
 
-In a new Claude Code conversation, send these three prompts, one at a time, in order:
+In a new Claude Code conversation, send these two prompts, one at a time, in order:
 
 **1.**
 ```
@@ -13,16 +13,17 @@ Clone https://github.com/Ofirushinek/canvas-capture.git and cd into it.
 
 **2.**
 ```
-/design a blank page
-```
-
-**3.**
-```
 Follow .claude/commands/capture.md to capture ADD_YOUR_URL_HERE
 ```
 
-After that, repeat prompt 3 alone with a new URL for every capture after the first — 1 and 2 don't
-need to happen again in the same conversation.
+That's it. Repeat prompt 2 alone with a new URL for every capture after the first.
+
+You'll always get a verified, real capture. Whether it opens as a live editable canvas right there, or
+as a static preview with a one-line note to import it into claude.ai/design yourself, depends on
+session state outside this tool's control — both are real, useful output; neither is a failure.
+
+Want better odds of the live canvas: send `/design a blank page` once, by itself, right before prompt
+2 — optional, never required, ignore whatever it produces.
 
 ## What this is
 

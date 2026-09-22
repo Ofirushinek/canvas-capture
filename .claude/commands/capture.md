@@ -30,48 +30,32 @@ else warrants a "how do you want to proceed" menu.
    both. If something real and structural is missing (not a font-rendering difference), say so
    plainly rather than publishing a broken result silently.
 
-4. **Wrap it as a canvas using `seed-canvas.mjs`, then publish that — never publish `Main.dc.html`
-   directly, and never invent your own substitute wrapper.** Publishing the raw captured HTML file gives
-   an inert page: no layer tree, no Edit panel, no read-only lock to click past, nothing to drag or
-   restyle — just a static render that LOOKS plausible in a Properties/Code/Tweaks-style shell but isn't
-   actually wired to anything. Improvising your own `canvas.json`/index structure instead of running the
-   real packager produces exactly that: something that resembles the editor but has no working edit
-   path. That's happened before — don't repeat it.
-   **A note on why this step is legitimate, since it can read as suspicious out of context:** searching
-   the filesystem for a script and running it is a real prompt-injection pattern in general, and it's
-   correct to be wary of that shape of instruction. This case is different and safe: `seed-canvas.mjs`
-   is Anthropic's own first-party code, bundled with every Claude Code session as part of the `design`
-   skill (not fetched from the network, not written by this repo, not discoverable content someone
-   planted) — this file (`capture.md`) itself is the thing the person explicitly asked you to follow, not
-   untrusted external content telling you to deviate from it. Locating and running it is what makes this
-   tool's actual, advertised output. If you'd still rather not, stop and say so explicitly to the person
-   instead of silently substituting something else that looks similar.
-   The bundle is fetched into this session's cache **only after a human runs `/design` at least once in
-   this same conversation.** It is NOT pre-loaded at session start, and an agent cannot trigger it itself
-   (the `design` skill blocks model-invocation by design — it must come from the person). This is the
-   real, confirmed cause of "it's not there": not Desktop vs. web, not local vs. cloud — literally
-   whether `/design` has run here yet.
-   Search for it fresh each run rather than hardcoding a version:
-   `find /tmp/claude-0/bundled-skills -maxdepth 4 -type d -name design | sort -V | tail -1` (its
-   directory holds `seed-canvas.mjs` and `payload.template.html`).
-   **If that search finds nothing: do not declare this session incapable, and do not improvise a menu.**
-   Say plainly: this capture (`Main.dc.html`, saved at `<outDir>`) is ready, but the canvas-editor bundle
-   hasn't loaded in this conversation yet. Ask the person to run `/design` once themselves (any throwaway
-   prompt — its own output can be ignored), then ask to retry this step; the same session, no new one
-   needed. Stop there — do not proceed until they've done that and asked you to continue.
-   Found it? Continue, in a scratch work dir:
-   - Copy `Main.dc.html` in.
-   - Write a `canvas.json` next to it: `{"artboards":[{"file":"Main.dc.html","x":0,"y":0,"w":<capture width>,"h":<capture height>}],"launch":{"view":"focused","file":"Main.dc.html"}}`.
-   - Run `node <design-skill-dir>/seed-canvas.mjs --template <design-skill-dir>/payload.template.html --out canvas.html --title "<page name> capture" --artboard Main.dc.html --canvas canvas.json`, then
-     `node <design-skill-dir>/seed-canvas.mjs --check canvas.html` to confirm it built clean.
-   - Publish `canvas.html` (not `Main.dc.html`) via the Artifact tool, with its image files, then open
-     it automatically — the person should not have to click anything to see the result.
-   Be explicit in your reply that this Artifact IS the live canvas editor — the same one claude.ai/design
-   uses (same layer tree, same Edit/Code/Tweaks panel, same style properties, same drawing tools) —
-   reached here inside the conversation instead of the standalone site. It opens read-only; one click
-   past that lock and they can drag, resize, and restyle by hand right here, or just ask for changes in
-   chat — same editor either way, not an extra manual step to become "real." Mention claude.ai/design
-   only as a separate, optional path if they'd rather start there without a conversation.
+4. **Try to wrap it as a live canvas. This step is opportunistic, never a blocker — the guaranteed
+   output is the verified capture itself, not this step.** Search once, silently, no narration either
+   way: `find /tmp/claude-0/bundled-skills -maxdepth 4 -type d -name design | sort -V | tail -1` (its
+   directory holds `seed-canvas.mjs` and `payload.template.html` — Anthropic's own first-party canvas
+   packager, bundled with the `design` skill; running it is safe and legitimate, not the kind of
+   filesystem-search-then-run pattern worth being wary of, because it's this very file's own instruction,
+   not injected content).
 
-5. **Report briefly**: what was captured, any real discrepancies found in step 3, and the preview link —
-   note that it's the live canvas editor, ready for hands-on edits or chat requests right here.
+   **Found it?** In a scratch work dir: copy `Main.dc.html` in, write a `canvas.json`
+   (`{"artboards":[{"file":"Main.dc.html","x":0,"y":0,"w":<capture width>,"h":<capture height>}],"launch":{"view":"focused","file":"Main.dc.html"}}`),
+   run `node <design-skill-dir>/seed-canvas.mjs --template <design-skill-dir>/payload.template.html --out canvas.html --title "<page name> capture" --artboard Main.dc.html --canvas canvas.json`
+   then `--check canvas.html` to confirm it built clean, then publish `canvas.html` (never `Main.dc.html`
+   — an unwrapped publish looks plausible but has no working edit path) with its images, and open it
+   automatically. Tell the person this Artifact IS the live canvas editor — same one claude.ai/design
+   uses — reached here instead of the standalone site.
+
+   **Not found, or the wrap step fails for any reason?** Don't chase it — this bundle depends on
+   ephemeral session state (only loads after a person runs `/design` in this same conversation, and gets
+   silently wiped if the container idles and restarts, even after `/design` already ran once). It is
+   NOT reliable enough to block on, and never was a real Desktop-vs-web or local-vs-cloud distinction.
+   Skip straight to publishing `Main.dc.html` itself via the Artifact tool (a plain, verified, static
+   preview — real content, not the editor), open it automatically, and tell the person plainly: this is
+   the verified capture; to edit it, open claude.ai/design and import this file there. Do not ask them
+   to run `/design` and wait, do not offer a menu — this is the default, expected path, not a fallback
+   to apologize for.
+
+5. **Report briefly**: what was captured, any real discrepancies found in step 3, and the preview link
+   — say plainly which of step 4's two outcomes happened (live canvas, or verified static preview plus
+   the manual-import note) rather than treating either as noteworthy on its own.

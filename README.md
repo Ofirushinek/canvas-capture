@@ -18,13 +18,9 @@ same turn.
 Already have the repo cloned in this conversation? `/capture <url>` alone does the same thing, faster,
 for every capture after the first.
 
-⚠️ **The "opens as an editable canvas" part needs a claude.ai-hosted Claude Code session (the web app
-at claude.ai/code) — not the standalone Desktop app.** The canvas editor comes from a packager bundled
-with the web session itself; a real test against the Desktop app searched for it (app bundle + Claude
-config directories) and it was not there. The capture script works fine locally either way — only the
-"wrap it as a live canvas" step needs the web session. On Desktop: run the capture locally, then finish
-by pasting the captured `Main.dc.html` into a claude.ai/code browser tab and asking it to open the
-capture as a canvas there.
+⚠️ **The "opens as an editable canvas" part needs a cloud-container session, not a session working
+against a local folder.** Works fine in Claude Desktop as long as the conversation is running in one of
+its cloud containers — the split isn't Desktop vs. browser, it's cloud session vs. local folder.
 
 ## What this is
 

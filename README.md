@@ -13,7 +13,7 @@ Clone https://github.com/Ofirushinek/canvas-capture.git and cd into it.
 
 **2.**
 ```
-/design
+/design a blank page
 ```
 
 **3.**

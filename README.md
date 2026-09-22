@@ -20,9 +20,13 @@ No code — a judgment discipline for taking an edit made in the canvas and putt
 
 ## Install
 
+Requires Node.js 18+.
+
 ```
 npm install playwright
 ```
+
+On a locked-down network (corporate proxy, restricted egress), Playwright's browser-binary download can fail silently — `npm install` exits clean but the browser is missing. If the capture script errors on launch, run `npx playwright install chromium` and check its output directly.
 
 ## Usage
 
@@ -38,7 +42,7 @@ node skills/1-ui-to-canvas-capture/ui-to-canvas-capture.mjs <url> <selector> <ou
 
 Open the resulting `Main.dc.html` in Claude Design to edit it.
 
-**Using Claude Code?** Clone this repo, open a session in it, and run `/capture <url>` — it drives the script, verifies the result against the live page, and publishes a preview link automatically. See `.claude/commands/capture.md`.
+**Using Claude Code?** Clone this repo, open a session in it, and run `/capture <url>` — it drives the script, verifies the result against the live page, and publishes a preview link automatically. That preview is a static page, not the live editable canvas — opening it in the real [claude.ai/design](https://claude.ai/design) editor is still one manual step (import `Main.dc.html` there yourself). See `.claude/commands/capture.md`.
 
 ## Why this exists
 

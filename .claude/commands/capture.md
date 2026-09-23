@@ -41,60 +41,40 @@ menu.
    etc.) — these are normal and documented in `skills/1-ui-to-canvas-capture/SKILL.md`, not failures,
    but note them.
 
-3. **Verify AND FIX before showing anything — no exceptions, this is a standing rule for this tool.**
-   `node skills/1-ui-to-canvas-capture/verify-capture.mjs <Main.dc.html path> <live url> <viewportWidth>
-   <outDir>` renders both screenshots for you — **use this, don't hand-write your own render script.**
-   Every field report on this tool independently wrote its own version of this and hit the SAME two
-   bugs doing it: run from outside this repo → can't resolve the `playwright` package at all; missing
-   this repo's own proxy/TLS launch config → `net::ERR_CERT_AUTHORITY_INVALID` on the live page. This
-   script already has both handled (and scrolls the live page through once first, since some
-   dashboards lazy-load a widget only once it's scrolled into view — confirmed live on plausible.io,
-   where a "blank widget" was the verification script's own bug, not a capture defect). It writes
-   `<outDir>/capture.png` and `<outDir>/live.png`. Look at both — you have vision, use it directly,
-   the same way you already fix a discrepancy in seconds whenever the person pastes you a screenshot
-   after the fact. **Don't wait for the person to be the one who spots it and pastes it back — that
-   round trip is pure waste if you can already see both images yourself, right now, before publishing.**
-   **Don't eyeball two full-page screenshots cold — measure first, then look.**
-   `python3 skills/1-ui-to-canvas-capture/diff-screenshots.py <capture.png> <live.png> 100 <heatmapOut.png>`
-   pixel-diffs the two (a noise floor already absorbs ordinary font-hinting/anti-aliasing differences
-   between two independent renders) and prints the overall diff% plus the worst few 100px bands. This
-   is a TRIAGE aid, not an autopass gate — a uniform low-level diff across ordinary text is normal and
-   not worth chasing; a band that stands out well above the rest is where a real defect actually lives.
-   Open the heatmap image and the worst band(s) it names with your own vision before deciding whether
-   something there is real — the number tells you where to look, it doesn't replace looking.
-   **Recognize the "text right at a pixel boundary" pattern immediately — don't re-investigate it from
-   scratch every time.** Confirmed independently at least three times (apple.com, speedtest.net,
-   Grafana Play): a short label or heading wraps/truncates one character differently between the
-   capture and a live screenshot, and measuring it down to the pixel shows the real rendered width is
-   within ~1px of the box's width either way — an inherent rendering variance between two independent
-   renders (this tool's flattened output vs. the live page's real cascade), not a bug to chase. The
-   signature: a SHORT text run (a nav label, a heading, a table header — not a paragraph), wrapping or
-   truncating differently by exactly one word/character, where the "worst band" it shows up in is
-   otherwise a normal single-digit diff%. If you see this signature, measure the actual pixel gap ONCE
-   (compare the element's rendered width in both) — if it's ≤2px, name it as this known variance and
-   move on immediately; don't spend multiple rounds probing timing, duplicate nodes, or font-load
-   status for it, that's chasing something that was never fixable at the pixel level to begin with.
-   If something real and structural is off (not a font-rendering nuance): identify the specific
-   difference, fix it, re-render, re-screenshot, re-compare — up to 3 rounds. Two kinds of fix:
-   - **Specific to this one capture** (a baked style value that's simply off, a broken image URL): edit
-     `Main.dc.html` directly and re-check. This is a hand-patch, not a script change — fine when the
-     cause is a one-off value, not a class of bug.
-   - **A real bug in the capture script itself** (something that would misfire on ANY page with this
-     shape, not just this one): fix `skills/1-ui-to-canvas-capture/ui-to-canvas-capture.mjs` and re-run
-     the capture from scratch instead of hand-patching the output — a script fix benefits every future
-     capture; a hand-patch benefits only this one file and leaves the real bug in place for next time.
-   Only after 3 rounds still show a real discrepancy should you fall back to publishing anyway and
-   naming the residual defect plainly in the report (step 5) — that's the exception now, not the
-   default. Never publish a first-pass result with a visible, fixable discrepancy just because "that's
-   what came out" — closing the loop yourself IS the job here, not optional polish.
+3. **Verify — but "good enough" is the target, not pixel-perfect. Speed matters more than chasing the
+   last few percent.** Ofir's explicit call: a capture that's 80% right in under a minute beats one
+   that's 100% right in 15 minutes. Don't over-verify — most runs should pass this step in ONE fast
+   check with zero investigation.
+   - `node skills/1-ui-to-canvas-capture/verify-capture.mjs <Main.dc.html path> <live url>
+     <viewportWidth> <outDir>` renders both screenshots — **use this, don't hand-write your own render
+     script.** Every field report on this tool independently wrote its own version and hit the SAME two
+     bugs doing it: run from outside this repo → can't resolve the `playwright` package; missing this
+     repo's own proxy/TLS config → `net::ERR_CERT_AUTHORITY_INVALID` on the live page. This script
+     already handles both (and scrolls the live page through once first, since some dashboards
+     lazy-load a widget only once it's scrolled into view).
+   - `python3 skills/1-ui-to-canvas-capture/diff-screenshots.py <capture.png> <live.png> 100
+     <heatmapOut.png>` prints an overall diff% (a noise floor already absorbs ordinary font-hinting
+     differences between two independent renders).
+   - **If diff% is under 8%: STOP HERE. Publish immediately.** Do not open the heatmap, do not look at
+     the worst bands, do not investigate further — this range is the normal, expected gap between two
+     independent renders on a page with real content, confirmed across many verified-good captures
+     this session (0.4%–5% on clean runs). Treating this as something to chase is exactly the wasted
+     time this step used to cost.
+   - **Only above 8%** open the heatmap and look at the worst band(s) with your own vision — the number
+     tells you where to look, it doesn't replace looking. If it's the "text right at a pixel boundary"
+     pattern (a short label/heading wraps or truncates by one word, the measured width gap is ≤2px) —
+     name it as known rendering variance and move on immediately, don't probe further. If it's a real
+     structural problem (missing content, badly broken layout): make ONE fix attempt — a hand-patch to
+     `Main.dc.html` for a one-off value, or a fix to `ui-to-canvas-capture.mjs` plus a re-run for a real
+     script bug — re-check once, and publish either way. Never spend a second round chasing the same
+     issue; if the one fix didn't clearly help, publish anyway and name the residual defect in the
+     report (step 5). A named, disclosed imperfection is a normal result here, not a failure.
    **A same-looking pair of screenshots is not proof of correctness if both came from the same flawed
    pipeline** — a real bug this exact check missed once: a timing issue that baked a handful of icons at
    the full page width hit the capture AND the "live" reference screenshot the same way, independently,
-   because both were rendered by the same script; they matched each other and were both wrong. After
-   comparing screenshots, also open the actual published canvas (or its `Main.dc.html` rendered full-page,
-   not cropped) and look at it as a whole once before calling this step done — an icon or element sized
-   wildly out of proportion, or a height that's a small fraction of what the page should be, is the kind
-   of defect a side-by-side crop comparison can miss entirely.
+   because both were rendered by the same script; they matched each other and were both wrong. This is
+   rare — don't go looking for it on every run — but if a report ever comes back with something visibly
+   wrong that step 3 called clean, this is why.
    **A screenshot match proves visual fidelity, not that the Design canvas will render it at all —
    these are different failure modes and this check only catches the first.** Real bug, found live on
    apple.com: capturing the default `body` selector serialized a nested `<body>` inside the output's own

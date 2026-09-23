@@ -26,9 +26,33 @@
 // Usage: node ui-to-canvas-capture.mjs <url> <selector> <outDir> [viewportWidth] ["click:sel|hover:sel|wait:ms|group:sel1,sel2|..."]
 
 import { chromium } from 'playwright';
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+
+// Node's built-in `fetch()` (used below for every image/font download) does
+// NOT honor HTTPS_PROXY/HTTP_PROXY by default — only `--use-env-proxy`
+// (Node's own env-proxy flag) makes it do that, and a CLI flag can only be
+// set at process START, never toggled from inside an already-running
+// process. Real bug, found live in a sandboxed environment with an egress
+// proxy: the BROWSER (given the proxy explicitly — see chromium.launch
+// below) fetched images fine, while Node's own fetch() for those same
+// downloads went direct, hit the proxy's own "Blocked by egress policy"
+// text page, and that got saved and handed to Pillow as if it were a real
+// image — crashing the whole capture on a completely unrelated error.
+// Fix: if a proxy is configured and this process wasn't already started
+// with the flag, re-exec ONCE with it — everything downstream then runs
+// inside a correctly-configured child process. The env sentinel prevents
+// re-execing forever.
+if (process.env.HTTPS_PROXY && !process.env.__CAPTURE_PROXY_REEXEC) {
+  const result = spawnSync(
+    process.execPath,
+    ['--use-env-proxy', fileURLToPath(import.meta.url), ...process.argv.slice(2)],
+    { stdio: 'inherit', env: { ...process.env, __CAPTURE_PROXY_REEXEC: '1' } }
+  );
+  process.exit(result.status ?? 1);
+}
 
 const [, , url, selector, outDir, vw, stepsArg] = process.argv;
 if (!url || !selector || !outDir) {
@@ -83,6 +107,11 @@ const PROPS = [
 // in-browser capture pass and the Node-side renderer need the same set.
 const TEXT_FLOW_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'span', 'li', 'label']);
 
+// Shared between the real browser (below) and every plain Node fetch() this
+// script makes later (images, fonts) — a download whose UA disagrees with
+// the browser that "viewed" the page is itself a bot-detection tell.
+const CAPTURE_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
+
 // executablePath: lets a sandboxed environment pin a pre-installed Chromium
 // build when the npm-installed Playwright version expects a newer one than
 // what's on disk (undefined is a no-op — Playwright falls back to its own
@@ -108,7 +137,7 @@ const browser = await chromium.launch({
 const page = await browser.newPage({
   viewport: { width: viewportWidth, height: 1000 },
   ignoreHTTPSErrors: true,
-  userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+  userAgent: CAPTURE_UA,
 });
 await page.addInitScript(() => {
   Object.defineProperty(navigator, 'webdriver', { get: () => false });
@@ -888,6 +917,20 @@ for (const node of screenshotNodes) {
   }
 }
 
+// Some sites 404 a font/image download unless the request looks like it
+// came from the real page — an exact `Referer` (the final, post-redirect
+// URL, trailing slash included) being the most common gate. Captured before
+// close(); every download below sends this plus a matching User-Agent and
+// Origin. Real bug, found live on apple.com: without this, its own SF Pro
+// font files 404'd across the board and the capture silently fell back to
+// zero real fonts, even though the @font-face rules themselves were found.
+const finalPageUrl = page.url();
+const DOWNLOAD_HEADERS = {
+  'User-Agent': CAPTURE_UA,
+  Referer: finalPageUrl,
+  Origin: new URL(finalPageUrl).origin,
+};
+
 await browser.close();
 
 // ---- Collect + fetch images referenced anywhere in the tree ----
@@ -916,7 +959,17 @@ for (const img of images) {
   counter += 1;
   let buf, contentType;
   try {
-    const resp = await fetch(src);
+    const resp = await fetch(src, { headers: DOWNLOAD_HEADERS });
+    // A non-2xx response (a proxy's own "Blocked by egress policy" page, a
+    // site's 403/404) is still a normal HTTP response with a body — without
+    // this check, that error page's TEXT got saved and handed to Pillow as
+    // if it were the real image, crashing the whole capture on a completely
+    // unrelated "cannot identify image file" error. Fail this ONE image
+    // cleanly instead; the rest of the capture doesn't depend on it.
+    if (!resp.ok) {
+      console.error(`image fetch failed: ${src} — HTTP ${resp.status} ${resp.statusText}`);
+      continue;
+    }
     contentType = (resp.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
     buf = Buffer.from(await resp.arrayBuffer());
   } catch (e) {

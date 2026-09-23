@@ -97,6 +97,10 @@ const PROPS = [
   'letterSpacing', 'textAlign', 'textDecoration', 'textTransform', 'whiteSpace', 'textWrap', 'verticalAlign',
   'display', 'flexDirection', 'flexWrap', 'justifyContent', 'alignItems', 'alignSelf',
   'flexGrow', 'flexShrink', 'flexBasis', 'gap', 'rowGap', 'columnGap',
+  // Grid item alignment: without these, a grid that centers its items via
+  // `justify-items:center` (stateofjs.com's sponsor logos) replays with
+  // every item stuck to the left edge.
+  'justifyItems', 'justifySelf', 'alignContent',
   'gridTemplateColumns', 'gridTemplateRows', 'gridColumn', 'gridRow',
   'cursor', 'transform', 'direction', 'listStyleType',
   'fontFeatureSettings', 'fontVariationSettings', 'webkitTextFillColor',
@@ -562,7 +566,19 @@ const tree = await page.evaluate(({ rootSel, PROPS, textFlowTags, groupMeta }) =
       ? [...el.parentElement.childNodes].filter((n) => !(n.nodeType === Node.TEXT_NODE && !n.textContent.trim()))
       : [];
     const soleContent = realSiblings.length === 1 && realSiblings[0] === el;
-    if (soleContent && el.parentElement) {
+    // Only meaningful between two real boxes. A `display:contents` parent
+    // (Astro islands, many framework wrappers) has NO box — its
+    // getBoundingClientRect() is 0,0,0,0 — so "distance to the parent's
+    // content edge" becomes this element's distance to the page's left
+    // edge, baked as a huge bogus margin. Real bug, stateofjs.com: a
+    // centered newsletter box shoved right by 320px, and a centered
+    // language list flung diagonally across the page (each link got its
+    // own absolute x as a margin). Same for an inline element or an inline
+    // parent: horizontal auto-centering margins don't exist there.
+    const pDisplay = el.parentElement ? getComputedStyle(el.parentElement).display : '';
+    const geomApplies = !cs.display.startsWith('inline') && cs.display !== 'contents'
+      && pDisplay !== 'contents' && !pDisplay.startsWith('inline');
+    if (soleContent && el.parentElement && geomApplies) {
       const parent = el.parentElement;
       const pRect = parent.getBoundingClientRect();
       const pCs = getComputedStyle(parent);
@@ -809,7 +825,15 @@ const tree = await page.evaluate(({ rootSel, PROPS, textFlowTags, groupMeta }) =
     // collapsing it to nothing. Real bug, found capturing an ordinary
     // colored-dot legend swatch.
     if (TEXT_FLOW_TAGS_BROWSER.has(el.tagName.toLowerCase()) && el.textContent.trim()) {
-      node.singleLine = el.scrollHeight <= parseFloat(cs.lineHeight) * 1.3;
+      // An INLINE element's scrollHeight is always 0, so the height check
+      // alone flagged every inline <span> as "one line" — and the renderer
+      // then forced white-space:nowrap on it. Real bug, stateofjs.com: whole
+      // multi-line paragraphs (a <p> wrapping one inline <span>) rendered
+      // as a single line running off the artboard. For inline boxes, count
+      // their actual line fragments instead.
+      node.singleLine = cs.display === 'inline'
+        ? el.getClientRects().length <= 1
+        : el.scrollHeight <= parseFloat(cs.lineHeight) * 1.3;
     }
     const bgMatch = IMG_URL_RE.exec(cs.backgroundImage);
     if (bgMatch && bgMatch[2] && !bgMatch[2].startsWith('data:')) {
@@ -1004,9 +1028,46 @@ for (const img of images) {
   // site's banner). An SVG is already small vector text, so it's copied
   // through as-is rather than run through the raster downsample pipeline.
   const isSvg = /^\s*(<\?xml|<svg)/i.test(buf.slice(0, 256).toString('utf8'));
-  const finalName = isSvg ? `img${counter}.svg` : `img${counter}.jpg`;
+  // A raster with real transparency (a logo, a badge over a dark card) must
+  // stay PNG: flattening it to JPEG paints every transparent pixel BLACK.
+  // Real bug, stateofjs.com: sponsor logos and every survey banner came out
+  // as solid black/green rectangles instead of floating on the page.
+  let hasAlpha = false;
+  if (!isSvg) {
+    try {
+      hasAlpha = execSync(`python3 -c "
+from PIL import Image
+im = Image.open('${rawPath}')
+if im.mode == 'P' and 'transparency' in im.info: im = im.convert('RGBA')
+print('1' if im.mode in ('RGBA', 'LA') and im.getchannel('A').getextrema()[0] < 255 else '0')
+"`).toString().trim() === '1';
+    } catch (e) { hasAlpha = false; }
+  }
+  const finalName = isSvg ? `img${counter}.svg` : hasAlpha ? `img${counter}.png` : `img${counter}.jpg`;
   if (isSvg) {
-    fs.renameSync(rawPath, path.join(outDir, finalName));
+    // Illustrator-exported SVGs carry a <!DOCTYPE ...> line; the Design
+    // canvas's publish step refuses ANY supporting XML file with DTD
+    // machinery ("carries a DOCTYPE or ENTITY declaration"), failing the
+    // whole publish. Real, stateofjs.com. A plain external DOCTYPE carries
+    // no rendering information, so strip it; an internal subset (entities)
+    // can, so that one is left in place and warned about.
+    let svgText = buf.toString('utf8');
+    svgText = svgText.replace(/<!DOCTYPE[^\[>]*>/i, '');
+    if (/<!DOCTYPE|<!ENTITY/i.test(svgText)) {
+      console.error(`WARNING: ${finalName} (${src}) declares XML entities — the Design canvas will refuse to publish it.`);
+    }
+    fs.writeFileSync(path.join(outDir, finalName), svgText);
+    fs.unlinkSync(rawPath);
+  } else if (hasAlpha) {
+    execSync(`python3 -c "
+from PIL import Image
+im = Image.open('${rawPath}').convert('RGBA')
+w,h = im.size
+scale = min(1, 700/w)
+im2 = im.resize((max(1,int(w*scale)), max(1,int(h*scale))))
+im2.save('${path.join(outDir, finalName)}', format='PNG', optimize=True)
+"`);
+    fs.unlinkSync(rawPath);
   } else {
     // downsample/recompress to keep each asset well under the canvas's per-image budget
     execSync(`python3 -c "
@@ -1164,6 +1225,7 @@ const SAFE_INITIAL_VALUES = {
   flexBasis: 'auto', gap: 'normal', rowGap: 'normal', columnGap: 'normal',
   gridTemplateColumns: 'none', gridTemplateRows: 'none',
   gridColumn: 'auto', gridRow: 'auto', transform: 'none',
+  justifyItems: 'normal', justifySelf: 'auto', alignContent: 'normal',
 };
 const BORDER_SIDES = ['Top', 'Right', 'Bottom', 'Left'];
 
@@ -1172,6 +1234,11 @@ function pruneRedundantStyles(node, parentStyle) {
     const style = node.style;
     if (parentStyle) {
       for (const key of INHERITED_PROPS) {
+        // Rule A assumes "no declaration = inherit". Not true where the
+        // browser's own UA stylesheet sets a value: a <th> defaults to
+        // centered + bold, so pruning its (inherited-looking) left-aligned
+        // text-align re-centers it. Real bug, stateofjs.com's survey table.
+        if (node.tag === 'th' && (key === 'textAlign' || key === 'fontWeight')) continue;
         if (style[key] !== undefined && style[key] === parentStyle[key]) delete style[key];
       }
     }

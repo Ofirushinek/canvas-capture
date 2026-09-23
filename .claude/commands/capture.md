@@ -32,6 +32,14 @@ menu.
    whenever the person pastes you a screenshot after the fact. **Don't wait for the person to be the
    one who spots it and pastes it back — that round trip is pure waste if you can already see both
    images yourself, right now, before publishing.**
+   **Don't eyeball two full-page screenshots cold — measure first, then look.**
+   `python3 skills/1-ui-to-canvas-capture/diff-screenshots.py <capture.png> <live.png> 100 <heatmapOut.png>`
+   pixel-diffs the two (a noise floor already absorbs ordinary font-hinting/anti-aliasing differences
+   between two independent renders) and prints the overall diff% plus the worst few 100px bands. This
+   is a TRIAGE aid, not an autopass gate — a uniform low-level diff across ordinary text is normal and
+   not worth chasing; a band that stands out well above the rest is where a real defect actually lives.
+   Open the heatmap image and the worst band(s) it names with your own vision before deciding whether
+   something there is real — the number tells you where to look, it doesn't replace looking.
    If something real and structural is off (not a font-rendering nuance): identify the specific
    difference, fix it, re-render, re-screenshot, re-compare — up to 3 rounds. Two kinds of fix:
    - **Specific to this one capture** (a baked style value that's simply off, a broken image URL): edit

@@ -16,8 +16,24 @@ fallback once that loop is genuinely exhausted, never a question). The only two 
 stopping for are in step 4 below (no exceptions) — nothing else warrants a "how do you want to proceed"
 menu.
 
-1. **Ensure the tool can run.** Check `node_modules/playwright` exists in this repo; if not, run
-   `npm install playwright` first.
+1. **Ensure the tool can run — check and install EVERYTHING up front, not one thing at a time.**
+   A fresh session has neither Playwright nor Pillow installed; discovering that reactively (the
+   capture script actually crashes on the image-downsample step once it gets there, minutes into a
+   run that already did real work) wastes real time compared to checking both before ever starting.
+   In one pass, before running anything in step 2:
+   - Check `node_modules/playwright` exists in this repo; if not, run `npm install` (not
+     `npm install playwright` — the repo's own `package.json` PINS an exact Playwright version that
+     matches this environment's pre-installed Chromium build; a bare `npm install playwright` instead
+     grabs whatever is newest on npm at that moment, which drifts out of sync with the pre-installed
+     browser as new Playwright versions ship and forces a real ~300MB browser download through the
+     proxy on every single fresh session — confirmed live, this is the single biggest real cost in
+     every "Chromium version mismatch" report this tool has ever gotten. `npm install` respecting the
+     committed, pinned `package.json` avoids that download entirely).
+   - Check Pillow is importable (`python3 -c "import PIL"`); if not, run `pip install Pillow`
+     (also seconds).
+   Both together are a handful of seconds on a fresh session. Doing this up front means the very
+   first capture in a brand-new session runs at the same speed as every one after it — there's no
+   "slow first run," only a slow first run if this step gets skipped.
 
 2. **Run the capture.** `node skills/1-ui-to-canvas-capture/ui-to-canvas-capture.mjs <url> <selector> <outDir>`
    — use a fresh `outDir` under a scratch/tmp location, never inside this repo's tracked tree.

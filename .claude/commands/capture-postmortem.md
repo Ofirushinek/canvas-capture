@@ -6,6 +6,10 @@ Look back through this conversation at the `/capture` (or manual capture) run yo
 Do not re-run anything, do not re-verify anything — this is pure extraction from what already
 happened in this conversation's own history.
 
+**Output the report as plain text directly in your chat reply — never as an Artifact, never as a
+file to download.** The person needs to select-and-copy it in one motion straight out of the
+conversation and paste it into another chat; a file or an Artifact adds a click and breaks that.
+
 Reconstruct and output a report in EXACTLY this format. For every field: pull a REAL value from
 something you actually did or saw in this conversation (a timestamp you printed, an error message you
 hit, a file size you reported) — never estimate, round, or reconstruct from memory of "roughly how

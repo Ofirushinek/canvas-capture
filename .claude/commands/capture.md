@@ -11,9 +11,10 @@ decide and continue, then say what you decided in the final report (step 5).** T
 of snag: an environment quirk (wrong Chromium build for the installed Playwright version, a network
 policy blocking a direct connection and needing a proxy, a missing image library like Pillow — fix it
 and move on, it's not this tool's bug, don't narrate the fix mid-flight either) and a real defect found
-in step 3 (publish anyway and name the defect in the report — that's always the right default, never a
-question). The only two things worth actually stopping for are in step 4 below (no exceptions) — nothing
-else warrants a "how do you want to proceed" menu.
+in step 3 (fix it yourself and re-verify, per step 3's own loop — publish-anyway-and-name-it is only the
+fallback once that loop is genuinely exhausted, never a question). The only two things worth actually
+stopping for are in step 4 below (no exceptions) — nothing else warrants a "how do you want to proceed"
+menu.
 
 1. **Ensure the tool can run.** Check `node_modules/playwright` exists in this repo; if not, run
    `npm install playwright` first.
@@ -24,11 +25,26 @@ else warrants a "how do you want to proceed" menu.
    etc.) — these are normal and documented in `skills/1-ui-to-canvas-capture/SKILL.md`, not failures,
    but note them.
 
-3. **Verify before showing anything — no exceptions, this is a standing rule for this tool.**
+3. **Verify AND FIX before showing anything — no exceptions, this is a standing rule for this tool.**
    Render the captured `Main.dc.html` locally (a plain Playwright screenshot at the same viewport
    width the capture used) and take a matching screenshot of the real live page/selector. Look at
-   both. If something real and structural is missing (not a font-rendering difference), say so
-   plainly rather than publishing a broken result silently.
+   both — you have vision, use it directly, the same way you already fix a discrepancy in seconds
+   whenever the person pastes you a screenshot after the fact. **Don't wait for the person to be the
+   one who spots it and pastes it back — that round trip is pure waste if you can already see both
+   images yourself, right now, before publishing.**
+   If something real and structural is off (not a font-rendering nuance): identify the specific
+   difference, fix it, re-render, re-screenshot, re-compare — up to 3 rounds. Two kinds of fix:
+   - **Specific to this one capture** (a baked style value that's simply off, a broken image URL): edit
+     `Main.dc.html` directly and re-check. This is a hand-patch, not a script change — fine when the
+     cause is a one-off value, not a class of bug.
+   - **A real bug in the capture script itself** (something that would misfire on ANY page with this
+     shape, not just this one): fix `skills/1-ui-to-canvas-capture/ui-to-canvas-capture.mjs` and re-run
+     the capture from scratch instead of hand-patching the output — a script fix benefits every future
+     capture; a hand-patch benefits only this one file and leaves the real bug in place for next time.
+   Only after 3 rounds still show a real discrepancy should you fall back to publishing anyway and
+   naming the residual defect plainly in the report (step 5) — that's the exception now, not the
+   default. Never publish a first-pass result with a visible, fixable discrepancy just because "that's
+   what came out" — closing the loop yourself IS the job here, not optional polish.
    **A same-looking pair of screenshots is not proof of correctness if both came from the same flawed
    pipeline** — a real bug this exact check missed once: a timing issue that baked a handful of icons at
    the full page width hit the capture AND the "live" reference screenshot the same way, independently,

@@ -104,6 +104,16 @@ const PROPS = [
   'gridTemplateColumns', 'gridTemplateRows', 'gridColumn', 'gridRow',
   'cursor', 'transform', 'direction', 'listStyleType',
   'fontFeatureSettings', 'fontVariationSettings', 'webkitTextFillColor',
+  // Table layout: without these, the browser's own UA default border-
+  // spacing (2px, on EVERY cell boundary) silently replaced whatever the
+  // real table used. Real bug, speedtest.net: tables rendered ~104px
+  // taller than their card and the last row spilled under "Show All".
+  'borderCollapse', 'borderSpacing', 'tableLayout',
+  // Visual effects with no earlier equivalent in this list — a card's own
+  // drop shadow (filter), a translucent overlay blend, a truncated label
+  // (textOverflow, paired with the already-captured whiteSpace/overflow),
+  // and a clipped decorative shape all silently vanished without these.
+  'filter', 'mixBlendMode', 'textShadow', 'textOverflow', 'clipPath',
 ];
 
 // Tags whose captured height gets dropped when they're wrapping text (see
@@ -323,20 +333,53 @@ await page.addStyleTag({ content: '*, *::before, *::after { animation-play-state
 // ever appears at the top.
 const fontLinksRaw = await page.evaluate(() => {
   const links = [...document.querySelectorAll('link[href*="fonts.googleapis.com"]')].map((l) => l.outerHTML);
-  const fontFaceRules = [];
+  const faceRules = [];
   function walk(rules) {
     for (const rule of rules) {
-      if (rule.constructor.name === 'CSSFontFaceRule') fontFaceRules.push(rule.cssText);
-      else if (rule.cssRules) walk(rule.cssRules);
+      if (rule.constructor.name === 'CSSFontFaceRule') {
+        faceRules.push({
+          cssText: rule.cssText,
+          family: (rule.style.getPropertyValue('font-family') || '').replace(/^['"]|['"]$/g, ''),
+          weight: rule.style.getPropertyValue('font-weight') || '400',
+          style: rule.style.getPropertyValue('font-style') || 'normal',
+          unicodeRange: rule.style.getPropertyValue('unicode-range') || '',
+          src: rule.style.getPropertyValue('src') || '',
+        });
+      } else if (rule.cssRules) walk(rule.cssRules);
     }
   }
   for (const sheet of document.styleSheets) {
     try { walk(sheet.cssRules); } catch (e) { /* cross-origin sheet — can't read its rules, skip it */ }
   }
-  return { links, fontFaceRules };
+  const normWeight = (w) => (w === 'normal' ? '400' : w === 'bold' ? '700' : w);
+  // A real Google Fonts stylesheet commonly declares 50+ unicode-range
+  // subset variants of the SAME family+weight (one per language range) —
+  // downloading every one is wasteful and can itself push the capture over
+  // the Design type's byte-size ceiling (finding 34). `document.fonts`
+  // reflects only the FontFace objects the browser actually triggered a
+  // load for, to render the glyphs actually present on THIS page, keyed by
+  // the exact family+weight+style+unicode-range it was declared with —
+  // filtering the declared rules against it keeps only what's really used.
+  const loadedKeys = new Set(
+    [...document.fonts]
+      .filter((f) => f.status === 'loaded')
+      .map((f) => `${f.family.replace(/^['"]|['"]$/g, '').toLowerCase()}|${normWeight(f.weight)}|${f.style}|${f.unicodeRange}`)
+  );
+  const matched = faceRules.filter((f) =>
+    loadedKeys.has(`${f.family.toLowerCase()}|${normWeight(f.weight)}|${f.style}|${f.unicodeRange || 'U+0-10FFFF'}`)
+  );
+  // If the match came up empty (a site that doesn't populate document.fonts
+  // the way this assumes, or a format this matching missed), fall back to
+  // every declared rule rather than silently shipping zero fonts — worse
+  // than downloading extras, but never a regression from before this fix.
+  return { links, faces: matched.length ? matched : faceRules };
 });
-const fontLinks = fontLinksRaw.links.join('\n  ') + '\n  ' +
-  (fontLinksRaw.fontFaceRules.length ? `<style>\n${fontLinksRaw.fontFaceRules.join('\n')}\n</style>` : '');
+// Just the Google Fonts <link> tags for now — the @font-face `<style>`
+// block (with real, downloaded, LOCAL file urls) is built further down,
+// after the browser closes, in the same pass that downloads every image;
+// see the font-download loop below for why relative @font-face urls can't
+// just be copied through as-is.
+let fontLinks = fontLinksRaw.links.join('\n  ');
 
 // The Design Artifact type's own format spec requires <title> and a real
 // <html lang="..."> on every artboard — this tool's generated output was
@@ -593,6 +636,36 @@ const tree = await page.evaluate(({ rootSel, PROPS, textFlowTags, groupMeta }) =
     return out;
   }
 
+  // A generated pseudo-element (`::before`/`::after`) that actually paints
+  // something is invisible to every DOM walk here — `el.childNodes` never
+  // includes it, because it isn't a real node. Real bug, speedtest.net: a
+  // Country/City toggle whose two labels are pure CSS
+  // (`content: attr(data-checked)` on ::before/::after) came out as an
+  // empty grey pill, because the text those labels show was never anywhere
+  // in the DOM to find. Only the two content forms worth resolving as real
+  // text are handled — a literal quoted string and a single attr(); anything
+  // else (counter(), url(), open-quote, an icon-font glyph) still gets a
+  // real, styled box (so a colored/bordered pseudo-element still shows up),
+  // just with no resolved text inside it.
+  function resolvePseudoContentText(rawContent, el) {
+    const v = rawContent.trim();
+    const quoted = /^["'](.*)["']$/.exec(v);
+    if (quoted) return quoted[1];
+    const attr = /^attr\(([a-zA-Z0-9_-]+)\)$/.exec(v);
+    if (attr) return el.getAttribute(attr[1]) || '';
+    return '';
+  }
+  function pseudoElementNode(el, pseudo) {
+    const pcs = getComputedStyle(el, pseudo);
+    if (pcs.content === 'none' || pcs.display === 'none') return null;
+    const style = {};
+    for (const p of PROPS) style[p] = pcs[p];
+    const text = resolvePseudoContentText(pcs.content, el);
+    const node = { type: 'el', tag: 'span', style, children: [] };
+    if (text) node.children.push({ type: 'text', text });
+    return node;
+  }
+
   // A Web Component's real visual structure (its border, padding, layout —
   // everything that makes it look like anything at all) lives inside its
   // shadow root, not its light-DOM children. Walking `el.childNodes`
@@ -745,24 +818,64 @@ const tree = await page.evaluate(({ rootSel, PROPS, textFlowTags, groupMeta }) =
       // A sprite-sheet icon (`<use href="#chevron-down-icon">`) points at a
       // <symbol> defined once, elsewhere in the real page's DOM (often a
       // hidden sprite injected near <body>) — never inside this SVG's own
-      // subtree. Copied as raw outerHTML in isolation, that id doesn't
-      // exist anywhere in the output file, so the <use> resolves to
-      // nothing and the icon silently vanishes. Fix: resolve every <use>
-      // against the LIVE document right now and inline a clone of whatever
-      // it points to as a local <defs>, so the reference still works once
-      // this SVG is the only thing left in the file.
+      // subtree. A local `<defs>` copy (this fix's first version) resolves
+      // fine in an ordinary browser, which does real id lookups across the
+      // document — but the Design canvas's own sanitizer parses this file's
+      // markup in isolation and never resolves a `<use href="#id">` at all,
+      // so every sprite icon (logos, nav icons, arrows) vanished ON THE
+      // CANVAS ONLY, invisible to any check done in a plain browser. Real
+      // bug, speedtest.net. Fix: never emit `<use>` — replace it with the
+      // actual shapes, inlined directly.
       const uses = clone.querySelectorAll('use');
-      if (uses.length) {
-        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-        uses.forEach((use) => {
-          const href = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
-          const id = href.startsWith('#') ? href.slice(1) : null;
-          if (!id) return;
-          const target = document.getElementById(id);
-          if (target) defs.appendChild(target.cloneNode(true));
-        });
-        if (defs.children.length) clone.insertBefore(defs, clone.firstChild);
-      }
+      uses.forEach((use) => {
+        const href = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
+        const id = href.startsWith('#') ? href.slice(1) : null;
+        const target = id ? document.getElementById(id) : null;
+        if (!target) { use.remove(); return; }
+        const isSymbol = target.tagName.toLowerCase() === 'symbol';
+        const useCs = getComputedStyle(use);
+        const isSoleUse = uses.length === 1 && clone.children.length === 1 && clone.children[0] === use;
+        if (isSymbol && target.hasAttribute('viewBox') && isSoleUse) {
+          // Common single-icon case: hoist the symbol's own viewBox onto the
+          // outer <svg> (the outer svg's own viewBox, if any, describes the
+          // sprite SHEET, not this one icon) and inline its shapes directly
+          // into a <g> — the simplest, flattest replacement.
+          clone.setAttribute('viewBox', target.getAttribute('viewBox'));
+          const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          // The symbol's own children often carry a sprite-context fill
+          // (e.g. explicit black, meant to be overridden by the icon font's
+          // own currentColor convention) that means nothing once isolated —
+          // the wrapper's resolved fill/stroke below is what should paint.
+          [...target.children].forEach((child) => {
+            const childClone = child.cloneNode(true);
+            childClone.removeAttribute('fill');
+            childClone.removeAttribute('stroke');
+            g.appendChild(childClone);
+          });
+          if (useCs.fill && useCs.fill !== 'none') g.setAttribute('fill', useCs.fill);
+          if (useCs.stroke && useCs.stroke !== 'none') g.setAttribute('stroke', useCs.stroke);
+          use.replaceWith(g);
+        } else {
+          // General case (multiple icons from the same sprite, or a shared
+          // non-symbol shape): a nested <svg> with its own viewBox/size, so
+          // several icons don't collide by sharing one outer viewBox.
+          const wrapper = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          if (isSymbol && target.hasAttribute('viewBox')) wrapper.setAttribute('viewBox', target.getAttribute('viewBox'));
+          for (const attr of ['x', 'y', 'width', 'height']) {
+            if (use.hasAttribute(attr)) wrapper.setAttribute(attr, use.getAttribute(attr));
+          }
+          const sourceChildren = isSymbol ? [...target.children] : [target];
+          sourceChildren.forEach((child) => {
+            const childClone = child.cloneNode(true);
+            childClone.removeAttribute('fill');
+            childClone.removeAttribute('stroke');
+            wrapper.appendChild(childClone);
+          });
+          if (useCs.fill && useCs.fill !== 'none') wrapper.setAttribute('fill', useCs.fill);
+          if (useCs.stroke && useCs.stroke !== 'none') wrapper.setAttribute('stroke', useCs.stroke);
+          use.replaceWith(wrapper);
+        }
+      });
       return { type: 'raw', html: clone.outerHTML, style: computedOf(el) };
     }
 
@@ -807,6 +920,17 @@ const tree = await page.evaluate(({ rootSel, PROPS, textFlowTags, groupMeta }) =
       node.placeholder = el.getAttribute('placeholder') || '';
       node.inputType = el.getAttribute('type') || 'text';
     }
+    // colspan/rowspan are HTML ATTRIBUTES, not CSS — nothing in the
+    // computed-style walk ever captures them, so a merged cell silently
+    // became a normal 1-column cell on replay. Real bug, speedtest.net:
+    // each ranking row is followed by a `<td colspan="4">` divider bar;
+    // without its colspan, column 1 stretched to the bar's own width and
+    // every other column in that row (and the ones below it, since a table
+    // column's width is shared down the whole table) drifted or collapsed.
+    if (el.tagName === 'TD' || el.tagName === 'TH') {
+      if (el.colSpan > 1) node.colSpan = el.colSpan;
+      if (el.rowSpan > 1) node.rowSpan = el.rowSpan;
+    }
     // Text that is CURRENTLY one line (not actually using its width to wrap)
     // gets its width captured as the exact content width with zero slack —
     // any host that renders a fraction of a pixel narrower (different font
@@ -845,7 +969,11 @@ const tree = await page.evaluate(({ rootSel, PROPS, textFlowTags, groupMeta }) =
     // inaccessible to any script outside the component) or when there's no
     // shadow root at all, which is the overwhelmingly common case and
     // falls straight back to walking el itself exactly as before.
+    const beforeNode = pseudoElementNode(el, '::before');
+    if (beforeNode) node.children.push(beforeNode);
     appendChildren(node, el.shadowRoot || el);
+    const afterNode = pseudoElementNode(el, '::after');
+    if (afterNode) node.children.push(afterNode);
     return node;
   }
 
@@ -1084,6 +1212,56 @@ im2.save('${path.join(outDir, finalName)}', format='JPEG', quality=62)
   else img._filename = finalName;
 }
 
+// ---- Download real @font-face files and relink them locally ----
+// A `src: url(...)` in a real @font-face rule is commonly SITE-RELATIVE
+// (`/s/fonts/Inter.woff2`) or protocol-relative — meaningless once this file
+// is served from a completely different origin (the Design canvas itself).
+// Copied through as raw CSS text (the previous behavior), the browser tries
+// to load it relative to ITS OWN origin, gets a 404, and silently falls
+// back to a system font. Real bug, speedtest.net: every number on the page
+// rendered in the wrong font because none of its real @font-face urls ever
+// resolved. Fix: resolve each url against the real page's own origin,
+// actually download the file (same proxy-aware, browser-headered fetch as
+// images, above), and relink the rule to the local copy.
+const SRC_URL_RE = /url\(\s*(['"]?)([^'")]+)\1\s*\)(?:\s*format\(\s*(['"]?)([^'")]+)\3\s*\))?/g;
+const FORMAT_EXT = { woff2: 'woff2', woff: 'woff', truetype: 'ttf', opentype: 'otf', 'embedded-opentype': 'eot', svg: 'svg' };
+const fontFaceCssTexts = [];
+let fontCounter = 0;
+for (const face of fontLinksRaw.faces.slice(0, 40)) {
+  const sources = [...face.src.matchAll(SRC_URL_RE)].map((m) => ({ url: m[2], format: m[4] || '' }));
+  let downloaded = null;
+  for (const src of sources) {
+    let absUrl;
+    try { absUrl = new URL(src.url, finalPageUrl).href; } catch (e) { continue; }
+    fontCounter += 1;
+    let buf;
+    try {
+      const resp = await fetch(absUrl, { headers: DOWNLOAD_HEADERS });
+      if (!resp.ok) continue;
+      buf = Buffer.from(await resp.arrayBuffer());
+    } catch (e) { continue; }
+    const ext = FORMAT_EXT[src.format.toLowerCase()] || (absUrl.split('?')[0].split('.').pop() || 'woff2').slice(0, 6);
+    const filename = `font${fontCounter}.${ext}`;
+    try {
+      fs.writeFileSync(path.join(outDir, filename), buf);
+      downloaded = { filename, format: src.format || (ext === 'woff2' ? 'woff2' : ext === 'woff' ? 'woff' : '') };
+      break; // one real, working local file per face — matches what a browser does anyway (first usable src wins)
+    } catch (e) { continue; }
+  }
+  if (!downloaded) {
+    console.error(`font download failed for ${face.family} (${face.weight}/${face.style}) — every src 404'd or was unreachable, skipping this face`);
+    continue;
+  }
+  // Keep every other descriptor (family, weight, style, unicode-range,
+  // font-display) exactly as authored — only the `src` declaration itself
+  // needs to change, to point at the one local file that actually downloaded.
+  const newSrc = `src: url("${downloaded.filename}")${downloaded.format ? ` format("${downloaded.format}")` : ''};`;
+  fontFaceCssTexts.push(face.cssText.replace(/src:[^;]+;/, newSrc));
+}
+if (fontFaceCssTexts.length) {
+  fontLinks += '\n  ' + `<style>\n${fontFaceCssTexts.join('\n')}\n</style>`;
+}
+
 // ---- Render tree back to HTML with inline styles ----
 // Forcing a literal height on a text-wrapping element freezes it at capture
 // time's line count; if the flattened re-render wraps even slightly
@@ -1229,16 +1407,31 @@ const SAFE_INITIAL_VALUES = {
 };
 const BORDER_SIDES = ['Top', 'Right', 'Bottom', 'Left'];
 
+// Rule A assumes "no declaration = inherit" — true only when the child's
+// OWN tag has no User-Agent-stylesheet default for that property. Where one
+// exists, pruning a value that happens to equal the parent's brings the UA
+// default back instead of real inheritance. Found narrowly at first (a
+// <th>'s default centered+bold re-appeared, stateofjs.com's survey table)
+// then generalized per the same report's own suggestion: any tag with a UA-
+// default inherited property has this risk, not just <th>. Keys are lower-
+// case tag names; '*' properties apply to every tag in the list.
+const UA_INHERITED_OVERRIDES = {
+  th: ['textAlign', 'fontWeight'],
+  button: '*', input: '*', select: '*', textarea: '*',
+  h1: ['fontWeight'], h2: ['fontWeight'], h3: ['fontWeight'],
+  h4: ['fontWeight'], h5: ['fontWeight'], h6: ['fontWeight'],
+  b: ['fontWeight'], strong: ['fontWeight'],
+  i: ['fontStyle'], em: ['fontStyle'],
+  code: ['fontFamily'], pre: ['fontFamily'],
+};
+
 function pruneRedundantStyles(node, parentStyle) {
   if (node.type === 'el' && node.style) {
     const style = node.style;
     if (parentStyle) {
+      const override = UA_INHERITED_OVERRIDES[node.tag];
       for (const key of INHERITED_PROPS) {
-        // Rule A assumes "no declaration = inherit". Not true where the
-        // browser's own UA stylesheet sets a value: a <th> defaults to
-        // centered + bold, so pruning its (inherited-looking) left-aligned
-        // text-align re-centers it. Real bug, stateofjs.com's survey table.
-        if (node.tag === 'th' && (key === 'textAlign' || key === 'fontWeight')) continue;
+        if (override === '*' || (Array.isArray(override) && override.includes(key))) continue;
         if (style[key] !== undefined && style[key] === parentStyle[key]) delete style[key];
       }
     }
@@ -1290,6 +1483,8 @@ function render(node) {
     attrs.push(`placeholder="${escapeHtml(node.placeholder || '')}"`);
     if (node.tag === 'input') attrs.push(`type="${node.inputType || 'text'}"`);
   }
+  if (node.colSpan) attrs.push(`colspan="${node.colSpan}"`);
+  if (node.rowSpan) attrs.push(`rowspan="${node.rowSpan}"`);
   const openTag = `<${node.tag} ${attrs.join(' ')}>`;
   if (VOID.has(node.tag)) return openTag;
   const inner = node.children.map(render).join('');

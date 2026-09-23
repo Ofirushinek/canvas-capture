@@ -2,6 +2,8 @@
 
 Capture any live webpage straight into your Claude Code conversation — the full drag/resize/restyle canvas editor opens right there, no separate app, no export/import round trip. Then put the edit back into your codebase without breaking a shared component or freezing live data.
 
+Built by [Ofir Ushinek](https://github.com/Ofirushinek) and his Claude agent team.
+
 ## Quickstart
 
 In a new Claude Code conversation, send these two prompts, one at a time, in order:

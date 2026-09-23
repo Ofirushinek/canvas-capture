@@ -1179,7 +1179,11 @@ for (const img of images) {
   counter += 1;
   let buf, contentType;
   try {
-    const resp = await fetch(src, { headers: DOWNLOAD_HEADERS });
+    // No timeout here would let ONE slow/unresponsive server stall the
+    // ENTIRE capture indefinitely — real bug, found live: a fresh session
+    // ran the exact documented demo prompt and hung for 4+ minutes with no
+    // progress. Node's fetch has no useful default timeout of its own.
+    const resp = await fetch(src, { headers: DOWNLOAD_HEADERS, signal: AbortSignal.timeout(10_000) });
     // A non-2xx response (a proxy's own "Blocked by egress policy" page, a
     // site's 403/404) is still a normal HTTP response with a body — without
     // this check, that error page's TEXT got saved and handed to Pillow as
@@ -1304,7 +1308,7 @@ for (const face of fontLinksRaw.faces.slice(0, 40)) {
     fontCounter += 1;
     let buf;
     try {
-      const resp = await fetch(absUrl, { headers: DOWNLOAD_HEADERS });
+      const resp = await fetch(absUrl, { headers: DOWNLOAD_HEADERS, signal: AbortSignal.timeout(10_000) });
       if (!resp.ok) continue;
       buf = Buffer.from(await resp.arrayBuffer());
     } catch (e) { continue; }

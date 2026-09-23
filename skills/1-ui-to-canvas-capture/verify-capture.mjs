@@ -42,10 +42,19 @@ const browser = await chromium.launch({
 });
 
 // Render the local capture output.
+// Real bug, found live: a fixed 1200ms wait instead of waiting for fonts to
+// actually finish loading meant this screenshot could be taken BEFORE a
+// locally-downloaded @font-face swapped in, catching a temporary fallback
+// font's wider glyph metrics — which can flip a heading from one line to
+// two in THIS screenshot alone, even though the real font (and the real
+// published canvas) never renders that way. ui-to-canvas-capture.mjs
+// itself already waits for `document.fonts.ready` before measuring
+// anything for exactly this reason; this script needs the same guarantee.
 const absHtmlPath = path.resolve(dcHtmlPath);
 const capturePage = await browser.newPage({ viewport: { width: viewportWidth, height: 1000 }, ignoreHTTPSErrors: true });
 await capturePage.goto(`file://${absHtmlPath}`);
-await capturePage.waitForTimeout(1200);
+await capturePage.evaluate(() => document.fonts.ready);
+await capturePage.waitForTimeout(300);
 const captureHeight = await capturePage.evaluate(() => document.body.scrollHeight);
 await capturePage.setViewportSize({ width: viewportWidth, height: Math.max(captureHeight, 100) });
 await capturePage.screenshot({ path: path.join(outDir, 'capture.png'), fullPage: true });
@@ -65,6 +74,7 @@ if (navResp && !navResp.ok()) {
   console.error(`live page returned HTTP ${navResp.status()} ${navResp.statusText()} — this comparison may be against an error page, not the real site`);
 }
 try { await livePage.waitForLoadState('networkidle', { timeout: 15000 }); } catch (e) { /* fine, proceed anyway */ }
+try { await livePage.evaluate(() => document.fonts.ready); } catch (e) { /* fine, proceed anyway */ }
 await livePage.evaluate(async () => {
   const step = Math.max(200, Math.floor(window.innerHeight / 2));
   for (let y = 0; y < document.body.scrollHeight; y += step) {

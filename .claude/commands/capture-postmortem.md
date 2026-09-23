@@ -36,6 +36,20 @@ WHAT HAPPENED, PHASE BY PHASE (only phases you can actually reconstruct)
 4. Verification (screenshots + comparison): <what you did, any issues hit>
 5. Publish to canvas: <any issues hit>
 
+AGENT OVERHEAD — this is the part earlier reports never captured, and it may be the actual bottleneck
+- Total number of separate tool calls / commands you ran this run (count them, don't estimate):
+- Of those, how many were pure investigation/re-reading/re-checking rather than doing new work
+  (re-reading capture.md or SKILL.md more than once, re-examining a screenshot you already looked at,
+  deciding whether a diff was "real" when it turned out not to be, re-deriving something you could
+  have reused): list each one briefly.
+- Did step 3's verify-and-fix loop run more than once even though nothing was actually fixed between
+  rounds (i.e. you re-verified, found the same non-issue, and re-verified again)? If yes, how many
+  rounds, and what was actually being re-checked each time?
+- Your best honest read: of the total wall-clock time, was more of it spent (a) waiting on a command
+  to finish, or (b) you reading/reasoning/deciding between commands? A rough split is fine — this is
+  the one field where "I'm not sure, but my impression was mostly (a)/(b)" is a real, useful answer,
+  not a guess to avoid.
+
 EVERY ERROR OR SNAG HIT THIS RUN (don't filter out ones that seemed minor — list all of them)
 - <error/snag> → <how it was resolved> → <time cost if you can tell, even roughly, otherwise "unknown">
 

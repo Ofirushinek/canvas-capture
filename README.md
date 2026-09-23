@@ -66,3 +66,7 @@ Fastest path: use the `/capture` Claude Code command below — it opens the resu
 ## Why this exists
 
 Getting a real, already-deployed page in front of Claude, into the same canvas you'd get on claude.ai/design, without leaving the conversation — and getting an edit back out without silently breaking something else — is what this closes.
+
+## License
+
+[Business Source License 1.1](LICENSE) — free to use, copy, modify, and self-host for any purpose, personal or commercial. The one thing you can't do is offer this (as-is or modified) as a hosted/managed service to others for a fee. Converts to Apache 2.0 four years after each release.

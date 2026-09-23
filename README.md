@@ -22,6 +22,12 @@ That's it. Repeat prompt 2 alone with a new URL for every capture after the firs
 extra setup, nothing to run first. You'll get a verified, real capture that opens as a live editable
 canvas right there in the conversation, every time.
 
+## Demo
+
+![Canvas Capture demo: cloning the repo, running /capture against a live page, verifying the diff, and publishing to a Design canvas](docs/demo.gif)
+
+Clone → `/capture` against a live URL → install + run → diff-check against the real page → publish as a live canvas, end to end.
+
 ## What this is
 
 Two parts, one job: move a real UI into the same canvas editor Claude Design uses, without leaving your conversation, and get an edit back into source safely.

@@ -38,6 +38,27 @@ No code — a judgment discipline for taking an edit made in the canvas and putt
 - It's an instance of a shared component used elsewhere? Stop and ask: update everywhere, or split into a one-off? Never decide that silently.
 - Its content is bound to live data — an API, a database? Never write the captured snapshot back as a literal value. That freezes one user's data for everyone. Style edits to a live-data element are still safe to patch.
 
+## How it works, step by step
+
+What actually happens between sending `/capture <url>` and a live canvas appearing in your conversation:
+
+1. **Set up.** Check `node_modules/playwright` and Pillow are installed; install whichever is missing (a few seconds — the repo pins an exact Playwright version matched to this environment's pre-installed Chromium build, so this never triggers a real browser download).
+2. **Capture.** Launch headless Chromium, navigate to the URL, wait for the page to actually settle (spinners cleared, animations frozen, lazy content scrolled into view, fonts loaded), then walk the live, rendered DOM — reading each element's real `getComputedStyle`, never source CSS — and bake it into one self-contained `Main.dc.html`. Images and font files referenced anywhere in the page get downloaded and relinked locally alongside it.
+3. **Verify.** Render that output file and take a fresh screenshot of the real live page, side by side, at the same viewport width. Pixel-diff the two — not eyeballed — to find any region that's actually wrong versus ordinary font-rendering noise. Fix anything real and re-check, up to a few rounds, before ever showing you anything.
+4. **Publish.** Create a canvas using Claude's own Design Artifact type (the same editor behind [claude.ai/design](https://claude.ai/design)), write the capture and its assets into it, and open it directly in the conversation.
+
+No step here needs `/design`, a separate app, or any manual setup beyond step 1 — and step 1 only runs once per session.
+
+## External tools this depends on
+
+- **[Playwright](https://playwright.dev/)** — drives headless Chromium: navigation, waiting for the page to settle, and reading every element's real computed style.
+- **Chromium** — the actual browser doing the rendering. In a Claude Code on the web session, a matching build is already pre-installed; nothing downloads on a fresh clone.
+- **[Pillow](https://python-pillow.org/)** (Python) — downsamples and re-encodes every captured image, and detects real transparency to decide PNG vs. JPEG.
+- **The Artifact tool's Design type** (Anthropic, claude.ai) — the actual canvas editor and its file format (`.dc.html`); this repo produces content for it, it doesn't reimplement it.
+- **Node.js 18+** and **Python 3** — the two runtimes everything above runs on.
+
+Nothing here is optional or swappable piece-by-piece — the pipeline is this specific stack end to end.
+
 ## Install
 
 Requires Node.js 18+ and Python 3 with Pillow (the capture script shells out to Python for image resizing).

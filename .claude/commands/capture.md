@@ -42,12 +42,18 @@ menu.
    but note them.
 
 3. **Verify AND FIX before showing anything — no exceptions, this is a standing rule for this tool.**
-   Render the captured `Main.dc.html` locally (a plain Playwright screenshot at the same viewport
-   width the capture used) and take a matching screenshot of the real live page/selector. Look at
-   both — you have vision, use it directly, the same way you already fix a discrepancy in seconds
-   whenever the person pastes you a screenshot after the fact. **Don't wait for the person to be the
-   one who spots it and pastes it back — that round trip is pure waste if you can already see both
-   images yourself, right now, before publishing.**
+   `node skills/1-ui-to-canvas-capture/verify-capture.mjs <Main.dc.html path> <live url> <viewportWidth>
+   <outDir>` renders both screenshots for you — **use this, don't hand-write your own render script.**
+   Every field report on this tool independently wrote its own version of this and hit the SAME two
+   bugs doing it: run from outside this repo → can't resolve the `playwright` package at all; missing
+   this repo's own proxy/TLS launch config → `net::ERR_CERT_AUTHORITY_INVALID` on the live page. This
+   script already has both handled (and scrolls the live page through once first, since some
+   dashboards lazy-load a widget only once it's scrolled into view — confirmed live on plausible.io,
+   where a "blank widget" was the verification script's own bug, not a capture defect). It writes
+   `<outDir>/capture.png` and `<outDir>/live.png`. Look at both — you have vision, use it directly,
+   the same way you already fix a discrepancy in seconds whenever the person pastes you a screenshot
+   after the fact. **Don't wait for the person to be the one who spots it and pastes it back — that
+   round trip is pure waste if you can already see both images yourself, right now, before publishing.**
    **Don't eyeball two full-page screenshots cold — measure first, then look.**
    `python3 skills/1-ui-to-canvas-capture/diff-screenshots.py <capture.png> <live.png> 100 <heatmapOut.png>`
    pixel-diffs the two (a noise floor already absorbs ordinary font-hinting/anti-aliasing differences
@@ -56,6 +62,18 @@ menu.
    not worth chasing; a band that stands out well above the rest is where a real defect actually lives.
    Open the heatmap image and the worst band(s) it names with your own vision before deciding whether
    something there is real — the number tells you where to look, it doesn't replace looking.
+   **Recognize the "text right at a pixel boundary" pattern immediately — don't re-investigate it from
+   scratch every time.** Confirmed independently at least three times (apple.com, speedtest.net,
+   Grafana Play): a short label or heading wraps/truncates one character differently between the
+   capture and a live screenshot, and measuring it down to the pixel shows the real rendered width is
+   within ~1px of the box's width either way — an inherent rendering variance between two independent
+   renders (this tool's flattened output vs. the live page's real cascade), not a bug to chase. The
+   signature: a SHORT text run (a nav label, a heading, a table header — not a paragraph), wrapping or
+   truncating differently by exactly one word/character, where the "worst band" it shows up in is
+   otherwise a normal single-digit diff%. If you see this signature, measure the actual pixel gap ONCE
+   (compare the element's rendered width in both) — if it's ≤2px, name it as this known variance and
+   move on immediately; don't spend multiple rounds probing timing, duplicate nodes, or font-load
+   status for it, that's chasing something that was never fixable at the pixel level to begin with.
    If something real and structural is off (not a font-rendering nuance): identify the specific
    difference, fix it, re-render, re-screenshot, re-compare — up to 3 rounds. Two kinds of fix:
    - **Specific to this one capture** (a baked style value that's simply off, a broken image URL): edit
@@ -103,6 +121,12 @@ menu.
    - Call the Artifact tool: `action: "publish"`, `type_url`: that url, `title`: a short name for the
      capture, `auto_open: "after_first_write"`, no `file_path`. This creates the canvas and returns its
      own `url` — use that `url` for every following call on this canvas, never `type_url` again.
+   - **The Artifact tool's `root` must be under the working directory or your own scratchpad
+     directory — a path outside both is refused** ("root: ... is outside the working directory ... or
+     your scratchpad directory"), wasting a full publish round-trip if you pick one arbitrarily. Use
+     your actual scratchpad directory (or a subdirectory under the repo's own working directory, e.g.
+     `outDir` from step 2) for the scratch work dir below — never an arbitrary path like a bare
+     `/tmp/...` subdirectory that happens not to be your assigned scratchpad.
    - In a scratch work dir, lay out `project/canvas.json` (`{"v":3,"createdOnFiles":{"v":1,"at":"<now,
      RFC 3339>"},"title":"<same short name>","launch":{"view":"focused","file":"Main.dc.html"},"pages":[],"boards":{"Main.dc.html":{"x":0,"y":0,"w":<capture
      width>,"h":<capture height>}},"order":["Main.dc.html"],"notes":{},"designSystems":[]}`) and

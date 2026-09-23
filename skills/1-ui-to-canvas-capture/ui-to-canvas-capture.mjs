@@ -102,6 +102,12 @@ const PROPS = [
   // every item stuck to the left edge.
   'justifyItems', 'justifySelf', 'alignContent',
   'gridTemplateColumns', 'gridTemplateRows', 'gridColumn', 'gridRow',
+  // Without this, a flex/grid item re-ordered visually via CSS `order` (a
+  // pagination-dots row placed after its carousel in source but visually
+  // moved above it via order) replays in plain SOURCE order instead — real
+  // bug, found live on apple.com: the dots rendered right after the
+  // headline, not after the carousel they belong to.
+  'order',
   'cursor', 'transform', 'direction', 'listStyleType',
   'fontFeatureSettings', 'fontVariationSettings', 'webkitTextFillColor',
   // Table layout: without these, the browser's own UA default border-
@@ -879,23 +885,26 @@ const tree = await page.evaluate(({ rootSel, PROPS, textFlowTags, groupMeta }) =
       return { type: 'raw', html: clone.outerHTML, style: computedOf(el) };
     }
 
-    // <canvas> (charts drawn via the Canvas/WebGL API) and <iframe> (a
-    // YouTube embed, any cross-origin widget) both have NOTHING for
+    // <canvas> (charts drawn via the Canvas/WebGL API), <iframe> (a
+    // YouTube embed, any cross-origin widget), and <video> (a decorative
+    // hero background loop — real bug, found live on apple.com AND
+    // independently on octoverse.github.com: no handling at all meant these
+    // vanished from the capture entirely) all have NOTHING for
     // getComputedStyle or DOM-walking to find — one paints pixels with no
-    // markup, the other's content lives in a different, inaccessible
-    // document entirely. Rather than emit an empty/blank box (found live:
-    // a real YouTube embed on a real dashboard rendered as a solid black
-    // rectangle), flag it here (a live DOM mutation: a stamped id) so the
-    // Node side can screenshot the actual element with Playwright right
-    // before closing the browser, and swap in that screenshot as a plain
-    // image. The visual result survives; only fine-grained editing of
-    // what's INSIDE it doesn't — the same trade this tool already makes
-    // for SVG icons, extended to the other cases where decomposition is
-    // impossible in principle, not just impractical.
-    if (el.tagName === 'CANVAS' || el.tagName === 'IFRAME') {
+    // markup, one's content lives in a different, inaccessible document
+    // entirely, one decodes frames outside the DOM. Rather than emit an
+    // empty/blank box (found live: a real YouTube embed on a real dashboard
+    // rendered as a solid black rectangle), flag it here (a live DOM
+    // mutation: a stamped id) so the Node side can screenshot the actual
+    // element with Playwright right before closing the browser, and swap in
+    // that screenshot as a plain image. The visual result survives; only
+    // fine-grained editing of what's INSIDE it doesn't — the same trade
+    // this tool already makes for SVG icons, extended to the other cases
+    // where decomposition is impossible in principle, not just impractical.
+    if (el.tagName === 'CANVAS' || el.tagName === 'IFRAME' || el.tagName === 'VIDEO') {
       const id = `__capture_shot_${window.__captureShotCounter = (window.__captureShotCounter || 0) + 1}__`;
       el.setAttribute('data-capture-shot-id', id);
-      return { type: 'screenshot-placeholder', shotId: id, style: computedOf(el) };
+      return { type: 'screenshot-placeholder', shotId: id, shotKind: el.tagName.toLowerCase(), style: computedOf(el) };
     }
 
     const node = {
@@ -1062,10 +1071,69 @@ for (const node of screenshotNodes) {
   if (!handle) { console.error(`screenshot placeholder "${node.shotId}" vanished before capture`); continue; }
   const filename = `shot${shotCounter}.jpg`;
   try {
-    await handle.screenshot({ path: path.join(outDir, filename), type: 'jpeg', quality: 70 });
-    node._filename = filename;
+    if (node.shotKind === 'video') {
+      // elementHandle.screenshot() on a <video> is unreliable — Playwright's
+      // own actionability/visibility check can time out on a video element
+      // that IS genuinely on-screen and playing (real bug, found live on
+      // apple.com: "element is not visible" on a video filling its own
+      // hero section), and even when it doesn't, a screenshot taken at
+      // whatever moment capture happens to run risks landing on a black
+      // frame before the first real frame decodes. Seek to the midpoint —
+      // a single representative frame, not the first (often blank/dark) or
+      // last one — and read pixels the video element has already decoded
+      // via an in-page <canvas>, never through Playwright's screenshot API.
+      const dataUrl = await page.evaluate(async (shotId) => {
+        const el = document.querySelector(`[data-capture-shot-id="${shotId}"]`);
+        if (!el) return null;
+        if (el.readyState < 2) {
+          await new Promise((resolve) => {
+            el.addEventListener('loadeddata', resolve, { once: true });
+            setTimeout(resolve, 3000);
+          });
+        }
+        const targetTime = el.duration && isFinite(el.duration) ? el.duration / 2 : 0;
+        if (targetTime > 0) {
+          await new Promise((resolve) => {
+            el.addEventListener('seeked', resolve, { once: true });
+            el.currentTime = targetTime;
+            setTimeout(resolve, 2000);
+          });
+        }
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = el.videoWidth || el.clientWidth || 1;
+          canvas.height = el.videoHeight || el.clientHeight || 1;
+          canvas.getContext('2d').drawImage(el, 0, 0, canvas.width, canvas.height);
+          return canvas.toDataURL('image/jpeg', 0.7);
+        } catch (e) {
+          // A cross-origin video source with no CORS headers taints the
+          // canvas — toDataURL() throws a SecurityError. Not fixable from
+          // here (the source doesn't grant pixel access); fall through to
+          // the elementHandle.screenshot() fallback below instead.
+          return null;
+        }
+      }, node.shotId);
+      if (dataUrl) {
+        fs.writeFileSync(path.join(outDir, filename), Buffer.from(dataUrl.split(',')[1], 'base64'));
+        node._filename = filename;
+      } else {
+        // Either the element vanished, or the canvas draw was blocked by
+        // cross-origin tainting — try a plain element screenshot as a last
+        // resort (works when the element is at least actionable/visible,
+        // even if the frame-accurate midpoint trick above couldn't run).
+        try {
+          await handle.screenshot({ path: path.join(outDir, filename), type: 'jpeg', quality: 70 });
+          node._filename = filename;
+        } catch (e2) {
+          console.error(`video frame capture failed for ${node.shotId}:`, e2.message);
+        }
+      }
+    } else {
+      await handle.screenshot({ path: path.join(outDir, filename), type: 'jpeg', quality: 70 });
+      node._filename = filename;
+    }
   } catch (e) {
-    console.error('canvas/iframe screenshot failed:', node.shotId, e.message);
+    console.error('canvas/iframe/video screenshot failed:', node.shotId, e.message);
   }
 }
 
@@ -1506,6 +1574,17 @@ if ((rootSelector === 'body' || rootSelector === 'html') && tree.style) {
   tree.style.height = `${h}px`;
   tree.style.overflow = 'visible';
 }
+// A decorative background painted at a very negative z-index (a hero
+// "nebula"/gradient layer, meant to sit behind literally everything on the
+// real page) relies on the REAL page's root establishing a stacking
+// context — without one, a negative z-index escapes past the wrapper
+// template's own background and paints BEHIND it, invisible. Confirmed
+// live, independently, on two different sites (apple.com, octoverse.
+// github.com): the exact same symptom (a hero rendering solid white where
+// a colorful background image/video should show) traced to this. Give the
+// captured root its own stacking context so nothing inside it can escape
+// past the wrapper — the standard, minimal fix for this class of bug.
+if (tree.style) tree.style.isolation = 'isolate';
 // The captured root node keeps the REAL element's tag name (e.g. `body`,
 // when the default/whole-page selector was used) — serializing that
 // verbatim produces a SECOND, fully-styled <body> nested inside the
@@ -1563,18 +1642,51 @@ const SIZE_BUDGET = 1_800_000;
 // part of it dips below the line. That's a real "keep the top N px, cut the
 // rest" — no blank gaps, no gutted sections, because a kept row is never
 // missing pieces from inside itself.
+function maxBottomOf(node) {
+  let m = node && node._captureBottom !== undefined ? node._captureBottom : -Infinity;
+  if (node && Array.isArray(node.children)) {
+    for (const c of node.children) m = Math.max(m, maxBottomOf(c));
+  }
+  return m;
+}
+
+// Returns { node, pruned }: `pruned` says whether anything was actually cut
+// anywhere in this subtree, so a caller further up can tell whether ITS OWN
+// baked height needs correcting too (see below) — a table two levels above
+// a dropped <tr> needs the same fix as the <tbody> directly holding it.
 function pruneToHeight(node, cutoff) {
-  if (!node || !Array.isArray(node.children)) return node;
+  if (!node || !Array.isArray(node.children)) return { node, pruned: false };
   const children = [];
+  let prunedHere = false;
   for (const child of node.children) {
     if (child && child.type === 'el' && child._captureTop !== undefined) {
-      if (child._captureTop >= cutoff) continue;
-      children.push(pruneToHeight(child, cutoff));
+      if (child._captureTop >= cutoff) { prunedHere = true; continue; }
+      const r = pruneToHeight(child, cutoff);
+      children.push(r.node);
+      if (r.pruned) prunedHere = true;
     } else {
       children.push(child);
     }
   }
-  return { ...node, children };
+  let result = { ...node, children };
+  // Real bug, found live on coinmarketcap.com: cropping removed most of a
+  // price table's <tr> rows, but the <table>/<tbody> elements kept their
+  // OWN baked height from the full, uncropped page — every element here
+  // carries an explicit height (this tool bakes full computed style onto
+  // everything). CSS table layout then auto-stretched the 1-2 surviving
+  // rows to fill that stale, too-tall container instead of their real
+  // ~52px each, rendering as a mostly-blank table. Only recompute when a
+  // real prune happened somewhere in this subtree — an untouched node's
+  // baked height already matches its own content exactly, so recomputing
+  // it unconditionally risks shrinking a box that's legitimately taller
+  // than its content (trailing padding, deliberate empty space).
+  if (prunedHere && result.style && result.style.height && node._captureTop !== undefined) {
+    const newBottom = maxBottomOf(result);
+    if (newBottom > -Infinity) {
+      result.style = { ...result.style, height: `${Math.max(0, newBottom - node._captureTop)}px` };
+    }
+  }
+  return { node: result, pruned: prunedHere };
 }
 
 function countEls(node) {
@@ -1630,11 +1742,11 @@ if (Buffer.byteLength(dcHtml) > SIZE_BUDGET) {
   // over budget on its own), lo=0's result is still used, best effort.
   let lo = 0;
   let hi = h;
-  let bestTree = pruneToHeight(tree, 0);
+  let bestTree = pruneToHeight(tree, 0).node;
   let bestHtml = buildDcHtml(bestTree, 0);
   for (let iter = 0; iter < 24 && hi - lo > 4; iter++) {
     const mid = Math.floor((lo + hi) / 2);
-    const candidateTree = pruneToHeight(tree, mid);
+    const candidateTree = pruneToHeight(tree, mid).node;
     const candidateHtml = buildDcHtml(candidateTree, mid);
     if (Buffer.byteLength(candidateHtml) <= SIZE_BUDGET) {
       lo = mid;

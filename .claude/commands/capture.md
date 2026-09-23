@@ -53,15 +53,17 @@ menu.
      already handles both (and scrolls the live page through once first, since some dashboards
      lazy-load a widget only once it's scrolled into view).
    - `python3 skills/1-ui-to-canvas-capture/diff-screenshots.py <capture.png> <live.png> 100
-     <heatmapOut.png>` prints an overall diff% (a noise floor already absorbs ordinary font-hinting
-     differences between two independent renders).
-   - **If diff% is under 8%: STOP HERE. Publish immediately.** Do not open the heatmap, do not look at
-     the worst bands, do not investigate further — this range is the normal, expected gap between two
-     independent renders on a page with real content, confirmed across many verified-good captures
-     this session (0.4%–5% on clean runs). Treating this as something to chase is exactly the wasted
-     time this step used to cost.
-   - **Only above 8%** open the heatmap and look at the worst band(s) with your own vision — the number
-     tells you where to look, it doesn't replace looking. If it's the "text right at a pixel boundary"
+     <heatmapOut.png>` prints a `verdict` field — **read that field and do exactly what it says, don't
+     re-derive your own judgment call from the diff% number.** A real, confirmed field report ran a
+     diff at 3.28% — comfortably "good enough" — and still burned 4 investigation rounds and ~15
+     minutes second-guessing it, despite this same rule already being written in prose right here.
+     Prose is easy to skim past under your own judgment; treat `verdict: "PASS"` as a hard stop, not a
+     suggestion you're allowed to override because something still looks slightly off to you.
+   - **On `PASS`: stop. Publish immediately.** Do not open the heatmap, do not look at the worst bands,
+     do not second-guess it, do not decide "this time might be different" — that reasoning is exactly
+     what wastes 15 minutes on a page that was already fine to ship.
+   - **Only on `INVESTIGATE`** open the heatmap and look at the worst band(s) with your own vision — the
+     number tells you where to look, it doesn't replace looking. If it's the "text right at a pixel boundary"
      pattern (a short label/heading wraps or truncates by one word, the measured width gap is ≤2px) —
      name it as known rendering variance and move on immediately, don't probe further. If it's a real
      structural problem (missing content, badly broken layout): make ONE fix attempt — a hand-patch to

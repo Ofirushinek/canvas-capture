@@ -16,11 +16,22 @@ Output (stdout, one JSON object):
       "height": <common height used>,
       "diffPercent": <0-100, share of pixels that differ beyond the
                        anti-aliasing/font-hinting noise floor>,
+      "verdict": "PASS — publish immediately, do not investigate further"
+                 or "INVESTIGATE — diff above the good-enough threshold",
       "worstBands": [{"yStart":, "yEnd":, "diffPercent":}, ...]  (top 5,
                        sorted by diffPercent descending, empty bands with
                        ~0 diff omitted so a long matching page doesn't
                        drown the real ones)
     }
+
+The `verdict` field is the actual instruction, not just data — a real,
+confirmed field report ran a diff at 3.28% (well under the good-enough bar)
+and STILL burned 4 investigation rounds and ~15 minutes chasing 1-4px
+layout gaps, despite capture.md's own prose saying not to. Prose is easy to
+skim past; a verdict field in the tool's own output is not. On PASS, stop —
+don't open the heatmap, don't look at worstBands, don't reason about
+whether "this time might be different." That reasoning is exactly what
+wasted 15 minutes on a page that was already good enough to ship.
 
 If a heatmap path is given, writes a grayscale image the same size as the
 common crop where brightness = how much that pixel differs — a single image
@@ -39,6 +50,13 @@ from PIL import Image, ImageChops
 # diffs (a missing element, a wrong color, a shifted layout) clear it by a
 # wide margin; sub-pixel font rendering does not.
 THRESHOLD = 24
+
+# Ofir's explicit, direct call: a capture that's roughly right in under a
+# minute beats one that's pixel-perfect in 15 minutes. Confirmed across many
+# verified-good captures this session that ordinary text-reflow/animation/
+# font-hinting noise between two independent renders normally lands well
+# under this — a diff below it is not a defect to chase.
+GOOD_ENOUGH_THRESHOLD = 8.0
 
 
 def main():
@@ -96,10 +114,17 @@ def main():
     if heatmap_out:
         diff_max.save(heatmap_out)
 
+    verdict = (
+        "PASS — publish immediately, do not investigate further"
+        if overall < GOOD_ENOUGH_THRESHOLD
+        else "INVESTIGATE — diff above the good-enough threshold"
+    )
+
     print(json.dumps({
         "width": w,
         "height": h,
         "diffPercent": overall,
+        "verdict": verdict,
         "worstBands": worst_bands,
     }))
 
